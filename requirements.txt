@@ -1,0 +1,4 @@
+streamlit==1.50.0
+requests==2.34.2
+ephem==4.2.1
+tzdata==2025.2
