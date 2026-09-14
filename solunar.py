@@ -643,13 +643,20 @@ if submitted:
                     for i, (_score, start_idx) in enumerate(top_candidates, start=1):
                         st.write(f"**#{i}** - {format_window(timeline, start_idx, today_date)}")
 
+                    # Ranked by score (candidates is score-sorted) but charted in
+                    # chronological order, so the x-axis reads left-to-right as time
+                    # rather than jumping around by rank.
+                    ranked_by_time = sorted(
+                        enumerate(candidates, start=1),
+                        key=lambda pair: timeline[pair[1][1]]["dt"],
+                    )
                     score_df = pd.DataFrame({
                         "Window": [
                             f"#{i} {_label_for_date(timeline[start_idx]['dt'].date(), today_date)} "
                             f"{_format_time(timeline[start_idx]['dt'])}"
-                            for i, (_score, start_idx) in enumerate(candidates, start=1)
+                            for i, (_score, start_idx) in ranked_by_time
                         ],
-                        "Score": [round(score, 1) for score, _ in candidates],
+                        "Score": [round(score, 1) for _, (score, _) in ranked_by_time],
                     }).set_index("Window")
                     st.bar_chart(score_df, y="Score")
 
@@ -700,3 +707,67 @@ st.caption(
     "are shown alongside them so you can spot when a feeding period "
     "overlaps or nearly overlaps one."
 )
+
+with st.expander(":straight_ruler: How the hunting-window score is calculated"):
+    st.markdown(
+        f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window. Its score is the "
+        "sum of four independent terms (pure arithmetic - no AI involved):"
+    )
+    st.latex(r"\text{score} = \text{activity} + \text{cold} - \text{penalty} + \text{prerain}")
+
+    st.markdown("**1. Solunar activity** - every hour $h$ in the window contributes:")
+    st.latex(
+        r"\text{activity} = \sum_{h}\Big("
+        r"w_{\text{major}}\, o_h^{\text{major}}"
+        r" + w_{\text{minor}}\, o_h^{\text{minor}}"
+        r" + b_{\text{sun}}\, \mathbb{1}[\text{sunrise/sunset in } h]"
+        r"\Big)"
+    )
+    st.markdown(
+        f"$o_h$ is the fraction of hour $h$ a Major/Minor period overlaps; "
+        f"$w_{{\\text{{major}}}} = {MAJOR_WEIGHT}$, "
+        f"$w_{{\\text{{minor}}}} = {MINOR_WEIGHT}$, "
+        f"$b_{{\\text{{sun}}}} = {SUN_EVENT_BONUS}$."
+    )
+
+    st.markdown("**2. Cold-weather bonus** - deer move more in cold weather:")
+    st.latex(
+        r"\text{cold} = \min\!\Big(C_{\text{cap}},\ "
+        r"\max\big(0,\ \tfrac{T_{\text{base}} - \bar T}{S}\big)\Big)"
+    )
+    st.markdown(
+        f"$\\bar T$ is the window's average temperature; "
+        f"$T_{{\\text{{base}}}} = {COLD_BASELINE_F:.0f}^\\circ F$, "
+        f"$S = {COLD_BONUS_SCALE:.0f}^\\circ F$, "
+        f"$C_{{\\text{{cap}}}} = {COLD_BONUS_CAP:.1f}$."
+    )
+
+    st.markdown("**3. Rain/wind penalty** - subtracted from the score:")
+    st.latex(r"\text{penalty} = \frac{\bar p}{50} + \frac{\max(0,\ \bar v - 10)}{10}")
+    st.markdown(
+        r"$\bar p$ is average precipitation chance (%) and $\bar v$ is average wind speed (mph)."
+    )
+
+    st.markdown(
+        "**4. \"Before the front\" bonus** - hunting-camp folklore says animals move more "
+        "in the hours before a rain system arrives, not during it:"
+    )
+    st.latex(
+        r"\text{prerain} = \begin{cases}"
+        r"B & \bar p < T_p \text{ and } p_{\text{lookahead}} \ge T_p \\"
+        r"0 & \text{otherwise}"
+        r"\end{cases}"
+    )
+    st.markdown(
+        f"$p_{{\\text{{lookahead}}}}$ is the peak precipitation chance in the "
+        f"{PRE_RAIN_LOOKAHEAD_HOURS} hours after the window ends; "
+        f"$T_p = {PRE_RAIN_PRECIP_THRESHOLD}\\%$, $B = {PRE_RAIN_BONUS}$."
+    )
+
+    st.markdown(
+        f"The top {CANDIDATE_WINDOW_COUNT} highest-scoring windows are found by sliding "
+        f"this {WINDOW_HOURS}-hour window across every possible starting hour in the "
+        "forecast, keeping only non-overlapping windows (best score wins any overlap) so "
+        "the results represent genuinely different opportunities rather than the same "
+        "window shifted by an hour."
+    )
