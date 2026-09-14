@@ -260,9 +260,9 @@ PRE_RAIN_PRECIP_THRESHOLD = 50  # percent
 PRE_RAIN_BONUS = 1.5
 
 # How many top-scoring, non-overlapping windows to search for; the UI
-# only shows the top 3 of these, same as the no-LLM fallback on the
-# Slack-bot side.
-CANDIDATE_WINDOW_COUNT = 5
+# text list only shows the top 3 of these (same as the no-LLM fallback
+# on the Slack-bot side), but the score bar chart plots all of them.
+CANDIDATE_WINDOW_COUNT = 15
 
 # Open-Meteo's hourly forecast rejects forecast_days > 16 (HTTP 400), but
 # the "Days" slider below goes up to 30 so solunar-only (moon/sun) times
@@ -647,9 +647,9 @@ if submitted:
                         "Window": [
                             f"#{i} {_label_for_date(timeline[start_idx]['dt'].date(), today_date)} "
                             f"{_format_time(timeline[start_idx]['dt'])}"
-                            for i, (_score, start_idx) in enumerate(top_candidates, start=1)
+                            for i, (_score, start_idx) in enumerate(candidates, start=1)
                         ],
-                        "Score": [round(score, 1) for score, _ in top_candidates],
+                        "Score": [round(score, 1) for score, _ in candidates],
                     }).set_index("Window")
                     st.bar_chart(score_df, y="Score")
 
