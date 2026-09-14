@@ -4,9 +4,15 @@ major/minor activity windows) for any postal/zip code worldwide.
 
 Fully self-contained - no dependency on, or import of, anything outside
 this folder. No API keys, no .env, no secrets: geocoding is a public
-Zippopotam.us lookup, timezone resolution is a public Open-Meteo lookup,
-and the solunar math itself runs locally via the `ephem` astronomy
-library - no external solunar service involved.
+Zippopotam.us lookup, timezone resolution and the hourly weather forecast
+are public Open-Meteo lookups, and the solunar math itself runs locally
+via the `ephem` astronomy library - no external solunar service involved.
+
+On top of the per-day feeding times, the hourly forecast (temperature,
+precipitation chance, wind, barometric pressure) is cross-referenced
+against the solunar events to rank the best 6-hour "hunting windows" -
+see the scoring section below, which is pure arithmetic with no LLM
+anywhere in it.
 
 Run: streamlit run solunar.py
 """
@@ -249,15 +255,39 @@ COLD_BASELINE_F = 45.0
 COLD_BONUS_SCALE = 15.0
 COLD_BONUS_CAP = 2.0
 
-# Hunting-camp folklore: deer move more in the ~24 hours before a rain
-# system moves in (falling pressure ahead of the front), not during the
-# rain itself. A window gets a flat bonus when it's still reasonably dry
-# (its own average precip chance under PRE_RAIN_PRECIP_THRESHOLD) but
-# precipitation chance climbs to/above that threshold within
-# PRE_RAIN_LOOKAHEAD_HOURS after it ends.
-PRE_RAIN_LOOKAHEAD_HOURS = 24
-PRE_RAIN_PRECIP_THRESHOLD = 50  # percent
-PRE_RAIN_BONUS = 1.5
+# Barometric pressure. Falling pressure ahead of an approaching front is
+# a well-documented driver of increased deer movement (e.g. tracking-collar
+# studies such as Little et al. 2016, "Effects of Weather on Habitat
+# Selection and Movement of White-tailed Deer"); rather than inferring
+# "a front is coming" from a precipitation-chance forecast, this reads
+# actual barometric pressure (hourly `pressure_msl`, mean-sea-level so
+# it's comparable across elevations) from Open-Meteo and scores two
+# effects directly. Both award flat bonuses at fixed thresholds rather
+# than scaling continuously, and every threshold is a hunting-camp rule
+# of thumb expressed in inches of mercury (inHg), since that's how a
+# barometer is normally read:
+#   - a "falling" bonus, tiered by how much pressure has dropped over the
+#     PRESSURE_DROP_LOOKBACK_HOURS before a window starts: a drop of at
+#     least PRESSURE_DROP_THRESHOLD_IN earns PRESSURE_DROP_BONUS, a
+#     smaller-but-still-notable drop of at least
+#     PRESSURE_DROP_MINOR_THRESHOLD_IN earns PRESSURE_DROP_MINOR_BONUS.
+#     A bigger drop always earns at least as much as a smaller one - it's
+#     a threshold ladder, not a band - and only the higher tier applies
+#     once its threshold is met (no stacking of both bonuses), and
+#   - a "in the sweet-spot band" bonus, when the window's own average
+#     pressure falls between PRESSURE_BAND_LOW_IN and
+#     PRESSURE_BAND_HIGH_IN.
+HPA_PER_INHG = 33.8639
+
+PRESSURE_DROP_LOOKBACK_HOURS = 24
+PRESSURE_DROP_MINOR_THRESHOLD_IN = 0.2
+PRESSURE_DROP_MINOR_BONUS = 1.0
+PRESSURE_DROP_THRESHOLD_IN = 0.4
+PRESSURE_DROP_BONUS = 1.5
+
+PRESSURE_BAND_LOW_IN = 29.8
+PRESSURE_BAND_HIGH_IN = 30.3
+PRESSURE_BAND_BONUS = 1.0
 
 # How many top-scoring, non-overlapping windows to search for; the UI
 # text list only shows the top 3 of these (same as the no-LLM fallback
@@ -274,19 +304,22 @@ OPEN_METEO_MAX_FORECAST_DAYS = 16
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_hourly_weather(lat, lon, days):
-    """Hourly temp/precip-chance/wind speed+direction for `days` days at
-    (lat, lon), via Open-Meteo (free, no key) - same service and
-    timezone="auto" resolution as lookup_timezone() above, so these
-    hours line up with the days_data fetch_solunar() produces for the
-    same location. Returns a list of {'dt', 'temp_f', 'precip_chance',
-    'wind_mph', 'wind_dir_deg'} dicts (naive local datetimes), one per
-    hour, or None on failure."""
+    """Hourly temp/precip-chance/wind speed+direction/barometric pressure
+    for `days` days at (lat, lon), via Open-Meteo (free, no key) - same
+    service and timezone="auto" resolution as lookup_timezone() above, so
+    these hours line up with the days_data fetch_solunar() produces for
+    the same location. Returns a list of {'dt', 'temp_f', 'precip_chance',
+    'wind_mph', 'wind_dir_deg', 'pressure_inhg'} dicts (naive local
+    datetimes), one per hour, or None on failure. Open-Meteo only reports
+    pressure in hPa (no unit param like temperature/wind have), so it's
+    converted to inches of mercury here to match how a barometer is
+    normally read."""
     try:
         resp = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": lat, "longitude": lon,
-                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m",
+                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,pressure_msl",
                 "temperature_unit": "fahrenheit",
                 "wind_speed_unit": "mph",
                 "timezone": "auto",
@@ -302,6 +335,7 @@ def fetch_hourly_weather(lat, lon, days):
         precips = hourly.get("precipitation_probability") or []
         winds = hourly.get("wind_speed_10m") or []
         wind_dirs = hourly.get("wind_direction_10m") or []
+        pressures = hourly.get("pressure_msl") or []
         return [
             {
                 "dt": datetime.fromisoformat(t),
@@ -309,6 +343,7 @@ def fetch_hourly_weather(lat, lon, days):
                 "precip_chance": precips[i] if i < len(precips) else None,
                 "wind_mph": winds[i] if i < len(winds) else None,
                 "wind_dir_deg": wind_dirs[i] if i < len(wind_dirs) else None,
+                "pressure_inhg": (pressures[i] / HPA_PER_INHG) if i < len(pressures) and pressures[i] is not None else None,
             }
             for i, t in enumerate(times)
         ]
@@ -357,6 +392,7 @@ def _summarize_weather(samples):
     temps = [s["temp_f"] for s in samples if s["temp_f"] is not None]
     precips = [s["precip_chance"] for s in samples if s["precip_chance"] is not None]
     winds = [s["wind_mph"] for s in samples if s["wind_mph"] is not None]
+    pressures = [s["pressure_inhg"] for s in samples if s.get("pressure_inhg") is not None]
     wind_dir_pairs = [
         (s["wind_dir_deg"], s["wind_mph"]) for s in samples
         if s.get("wind_dir_deg") is not None and s.get("wind_mph") is not None
@@ -365,6 +401,7 @@ def _summarize_weather(samples):
         "temp_avg": round(sum(temps) / len(temps)) if temps else None,
         "precip_max": max(precips) if precips else None,
         "wind_avg": round(sum(winds) / len(winds), 1) if winds else None,
+        "pressure_avg": round(sum(pressures) / len(pressures), 2) if pressures else None,
         "wind_dir_deg": (
             _circular_mean_deg([d for d, _ in wind_dir_pairs], [w for _, w in wind_dir_pairs])
             if wind_dir_pairs else None
@@ -421,56 +458,102 @@ def build_hourly_timeline(days_data, samples, tz):
     return timeline
 
 
-def _upcoming_rain_chance(timeline, start_idx, window_hours):
-    """Max precipitation chance in the PRE_RAIN_LOOKAHEAD_HOURS right
-    after timeline[start_idx:start_idx+window_hours] ends, or None if
-    there's no weather data in that lookahead span. Shared by
-    score_window() (the "before the rain" bonus) and format_window() (so
-    the displayed text can reference the same signal that earned the
-    bonus)."""
-    lookahead = timeline[start_idx + window_hours: start_idx + window_hours + PRE_RAIN_LOOKAHEAD_HOURS]
-    precips = [h["weather"]["precip_max"] for h in lookahead if h["weather"] and h["weather"]["precip_max"] is not None]
-    return max(precips) if precips else None
+def _pressure_drop_in(timeline, start_idx):
+    """Pressure fall (inHg) over the PRESSURE_DROP_LOOKBACK_HOURS before
+    a window starts - positive means falling pressure, negative means
+    rising. None if there isn't enough history or pressure data at
+    either end. Fed to _pressure_drop_bonus() by both score_breakdown()
+    and format_window(), so the displayed text always references the
+    same signal that earned the bonus."""
+    before_idx = start_idx - PRESSURE_DROP_LOOKBACK_HOURS
+    if before_idx < 0:
+        return None
+    before = timeline[before_idx]["weather"]
+    now = timeline[start_idx]["weather"]
+    if not before or not now or before["pressure_avg"] is None or now["pressure_avg"] is None:
+        return None
+    return before["pressure_avg"] - now["pressure_avg"]
 
 
-def score_window(timeline, start_idx, window_hours=WINDOW_HOURS):
-    """Combined goodness score for timeline[start_idx:start_idx+window_hours]:
-    summed solunar activity, a cold-weather bonus, a "rain is coming"
-    bonus, and a precipitation/wind penalty. Returns None if the window
-    would run past the end of the timeline, or if it has neither solunar
-    activity nor any weather data at all."""
+def _pressure_drop_bonus(pressure_drop):
+    """Tiered falling-pressure bonus for a pressure_drop (inHg, from
+    _pressure_drop_in()) - 0.0 if None or below the minor threshold.
+    Shared by score_breakdown() and format_window() so the displayed
+    text always matches what was actually scored."""
+    if pressure_drop is None:
+        return 0.0
+    if pressure_drop >= PRESSURE_DROP_THRESHOLD_IN:
+        return PRESSURE_DROP_BONUS
+    if pressure_drop >= PRESSURE_DROP_MINOR_THRESHOLD_IN:
+        return PRESSURE_DROP_MINOR_BONUS
+    return 0.0
+
+
+CATEGORY_ACTIVITY = "Feeding Window"
+CATEGORY_WEATHER = "Weather"
+CATEGORY_PRESSURE_DROP = "Pressure Drop"
+
+
+def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
+    """Same validity rules as score_window(), but returns the individual
+    named terms that sum to the total score, so callers (the stacked
+    score bar chart) can show where a window's score actually comes
+    from. Returns None if the window would run past the end of the
+    timeline, or if it has neither solunar activity nor any weather data
+    at all. Otherwise a dict:
+      CATEGORY_ACTIVITY      - summed solunar activity (Major/Minor/Sun)
+      CATEGORY_WEATHER       - cold-weather bonus + pressure sweet-spot
+                               bonus, net of the precipitation/wind
+                               penalty (can be negative)
+      CATEGORY_PRESSURE_DROP - tiered falling-pressure bonus
+      'total'                 - sum of the three above
+    """
     hours = timeline[start_idx:start_idx + window_hours]
     if len(hours) < window_hours:
         return None
     if not any(h["events"] for h in hours) and not any(h["weather"] for h in hours):
         return None
 
-    score = sum(h["activity"] for h in hours)
+    activity = sum(h["activity"] for h in hours)
     temps = [h["weather"]["temp_avg"] for h in hours if h["weather"] and h["weather"]["temp_avg"] is not None]
     precips = [h["weather"]["precip_max"] for h in hours if h["weather"] and h["weather"]["precip_max"] is not None]
     winds = [h["weather"]["wind_avg"] for h in hours if h["weather"] and h["weather"]["wind_avg"] is not None]
+    pressures = [h["weather"]["pressure_avg"] for h in hours if h["weather"] and h["weather"]["pressure_avg"] is not None]
 
+    weather = 0.0
     if temps:
         avg_temp = sum(temps) / len(temps)
-        score += min(COLD_BONUS_CAP, max(0.0, (COLD_BASELINE_F - avg_temp) / COLD_BONUS_SCALE))
+        weather += min(COLD_BONUS_CAP, max(0.0, (COLD_BASELINE_F - avg_temp) / COLD_BONUS_SCALE))
 
     avg_precip = (sum(precips) / len(precips)) if precips else None
     if avg_precip is not None:
-        score -= avg_precip / 50.0
+        weather -= avg_precip / 50.0
 
     if winds:
         avg_wind = sum(winds) / len(winds)
-        score -= max(0.0, avg_wind - 10) / 10.0
+        weather -= max(0.0, avg_wind - 10) / 10.0
 
-    upcoming_precip = _upcoming_rain_chance(timeline, start_idx, window_hours)
-    if (
-        upcoming_precip is not None
-        and upcoming_precip >= PRE_RAIN_PRECIP_THRESHOLD
-        and (avg_precip is None or avg_precip < PRE_RAIN_PRECIP_THRESHOLD)
-    ):
-        score += PRE_RAIN_BONUS
+    if pressures:
+        avg_pressure = sum(pressures) / len(pressures)
+        if PRESSURE_BAND_LOW_IN <= avg_pressure <= PRESSURE_BAND_HIGH_IN:
+            weather += PRESSURE_BAND_BONUS
 
-    return score
+    pressure_drop = _pressure_drop_bonus(_pressure_drop_in(timeline, start_idx))
+
+    return {
+        CATEGORY_ACTIVITY: activity,
+        CATEGORY_WEATHER: weather,
+        CATEGORY_PRESSURE_DROP: pressure_drop,
+        "total": activity + weather + pressure_drop,
+    }
+
+
+def score_window(timeline, start_idx, window_hours=WINDOW_HOURS):
+    """Combined goodness score for timeline[start_idx:start_idx+window_hours]
+    - the 'total' from score_breakdown(), or None under the same
+    conditions score_breakdown() returns None."""
+    breakdown = score_breakdown(timeline, start_idx, window_hours)
+    return breakdown["total"] if breakdown else None
 
 
 def find_candidate_windows(timeline, now_local, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS):
@@ -537,11 +620,11 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
 
     weathers = [h["weather"] for h in hours if h["weather"]]
     bits = []
-    avg_precip = None
     if weathers:
         temps = [w["temp_avg"] for w in weathers if w["temp_avg"] is not None]
         precips = [w["precip_max"] for w in weathers if w["precip_max"] is not None]
         winds = [w["wind_avg"] for w in weathers if w["wind_avg"] is not None]
+        pressures = [w["pressure_avg"] for w in weathers if w["pressure_avg"] is not None]
         wind_dir_pairs = [
             (w["wind_dir_deg"], w["wind_avg"]) for w in weathers
             if w.get("wind_dir_deg") is not None and w.get("wind_avg") is not None
@@ -549,7 +632,6 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
         if temps:
             bits.append(f"avg {round(sum(temps) / len(temps))}°F")
         if precips:
-            avg_precip = sum(precips) / len(precips)
             bits.append(f"precip up to {max(precips):.0f}%")
         if winds:
             wind_bit = f"wind {round(sum(winds) / len(winds), 1)} mph avg"
@@ -559,14 +641,17 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
             if mean_dir is not None:
                 wind_bit += f" from {_compass_direction(mean_dir)}"
             bits.append(wind_bit)
+        if pressures:
+            avg_pressure = sum(pressures) / len(pressures)
+            pressure_bit = f"pressure {avg_pressure:.2f} inHg"
+            if PRESSURE_BAND_LOW_IN <= avg_pressure <= PRESSURE_BAND_HIGH_IN:
+                pressure_bit += " (sweet spot)"
+            bits.append(pressure_bit)
 
-    upcoming_precip = _upcoming_rain_chance(timeline, start_idx, window_hours)
-    if (
-        upcoming_precip is not None
-        and upcoming_precip >= PRE_RAIN_PRECIP_THRESHOLD
-        and (avg_precip is None or avg_precip < PRE_RAIN_PRECIP_THRESHOLD)
-    ):
-        bits.append(f"rain likely within {PRE_RAIN_LOOKAHEAD_HOURS}h - pre-front movement bump expected")
+    pressure_drop = _pressure_drop_in(timeline, start_idx)
+    if pressure_drop is not None and pressure_drop >= PRESSURE_DROP_MINOR_THRESHOLD_IN:
+        tier_label = "front approaching" if pressure_drop >= PRESSURE_DROP_THRESHOLD_IN else "pressure easing"
+        bits.append(f"falling {pressure_drop:.2f} in/{PRESSURE_DROP_LOOKBACK_HOURS}h - {tier_label}")
 
     weather_text = ", ".join(bits) if bits else "weather data unavailable"
 
@@ -636,7 +721,7 @@ if submitted:
                     st.subheader(":dart: Best Hunting Windows")
                     st.caption(
                         "Ranks every possible 6-hour window by solunar activity, "
-                        "temperature, wind, and rain timing."
+                        "temperature, wind, and barometric pressure."
                     )
                     today_date = now_local.date()
                     top_candidates = candidates[:3]
@@ -650,15 +735,57 @@ if submitted:
                         enumerate(candidates, start=1),
                         key=lambda pair: timeline[pair[1][1]]["dt"],
                     )
-                    score_df = pd.DataFrame({
-                        "Window": [
+
+                    # Each bar is stacked by score SOURCE (feeding window /
+                    # weather / pressure drop) rather than plotted as one
+                    # solid color, so it's visible at a glance where a
+                    # window's score is actually coming from. Colors are
+                    # fixed per category (never re-cycled) and match the
+                    # order they're stacked in.
+                    category_order = [CATEGORY_ACTIVITY, CATEGORY_WEATHER, CATEGORY_PRESSURE_DROP]
+                    category_colors = ["#2a78d6", "#eb6834", "#1baf7a"]
+
+                    window_labels = []
+                    breakdown_rows = []
+                    for i, (_score, start_idx) in ranked_by_time:
+                        label = (
                             f"#{i} {_label_for_date(timeline[start_idx]['dt'].date(), today_date)} "
                             f"{_format_time(timeline[start_idx]['dt'])}"
-                            for i, (_score, start_idx) in ranked_by_time
+                        )
+                        window_labels.append(label)
+                        breakdown = score_breakdown(timeline, start_idx)
+                        for rank, category in enumerate(category_order):
+                            breakdown_rows.append({
+                                "Window": label,
+                                "Category": category,
+                                "CategoryRank": rank,
+                                "Score": round(breakdown[category], 2),
+                            })
+
+                    score_breakdown_df = pd.DataFrame(breakdown_rows)
+                    score_chart = alt.Chart(score_breakdown_df).mark_bar().encode(
+                        x=alt.X("Window:N", sort=window_labels, title=None,
+                                axis=alt.Axis(labelAngle=-40)),
+                        y=alt.Y("Score:Q", title="Score"),
+                        color=alt.Color(
+                            "Category:N",
+                            scale=alt.Scale(domain=category_order, range=category_colors),
+                            legend=alt.Legend(title="Score source"),
+                        ),
+                        order=alt.Order("CategoryRank:Q"),
+                        tooltip=[
+                            alt.Tooltip("Window:N"),
+                            alt.Tooltip("Category:N"),
+                            alt.Tooltip("Score:Q", format=".2f"),
                         ],
-                        "Score": [round(score, 1) for _, (score, _) in ranked_by_time],
-                    }).set_index("Window")
-                    st.bar_chart(score_df, y="Score")
+                    ).properties(height=320)
+                    st.altair_chart(score_chart, width="stretch")
+                    st.caption(
+                        "Each bar is stacked by where its score comes from: solunar "
+                        "**Feeding Window** activity, the combined **Weather** effect "
+                        "(cold bonus + pressure sweet-spot bonus, net of the rain/wind "
+                        "penalty - can pull a bar down), and the **Pressure Drop** bonus."
+                    )
 
                     st.subheader(":chart_with_upwards_trend: Forecast Overview")
                     st.caption(
@@ -711,9 +838,9 @@ st.caption(
 with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     st.markdown(
         f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window. Its score is the "
-        "sum of four independent terms (pure arithmetic - no AI involved):"
+        "sum of five independent terms (pure arithmetic - no AI involved):"
     )
-    st.latex(r"\text{score} = \text{activity} + \text{cold} - \text{penalty} + \text{prerain}")
+    st.latex(r"\text{score} = \text{activity} + \text{cold} - \text{penalty} + \text{sweetspot} + \text{dropping}")
 
     st.markdown("**1. Solunar activity** - every hour $h$ in the window contributes:")
     st.latex(
@@ -749,19 +876,43 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     )
 
     st.markdown(
-        "**4. \"Before the front\" bonus** - hunting-camp folklore says animals move more "
-        "in the hours before a rain system arrives, not during it:"
+        "**4. Pressure sweet-spot bonus** - a flat bonus (not scaled) when the window's own "
+        "average barometric pressure falls in a hunting-camp \"sweet spot\" band, read "
+        "directly from hourly mean-sea-level pressure data:"
     )
     st.latex(
-        r"\text{prerain} = \begin{cases}"
-        r"B & \bar p < T_p \text{ and } p_{\text{lookahead}} \ge T_p \\"
+        r"\text{sweetspot} = \begin{cases}"
+        r"B_{\text{band}} & P_{\text{low}} \le \bar P \le P_{\text{high}} \\"
         r"0 & \text{otherwise}"
         r"\end{cases}"
     )
     st.markdown(
-        f"$p_{{\\text{{lookahead}}}}$ is the peak precipitation chance in the "
-        f"{PRE_RAIN_LOOKAHEAD_HOURS} hours after the window ends; "
-        f"$T_p = {PRE_RAIN_PRECIP_THRESHOLD}\\%$, $B = {PRE_RAIN_BONUS}$."
+        f"$\\bar P$ is the window's average sea-level pressure (inHg); "
+        f"$P_{{\\text{{low}}}} = {PRESSURE_BAND_LOW_IN}$, "
+        f"$P_{{\\text{{high}}}} = {PRESSURE_BAND_HIGH_IN}$, "
+        f"$B_{{\\text{{band}}}} = {PRESSURE_BAND_BONUS:.1f}$."
+    )
+
+    st.markdown(
+        "**5. Falling-pressure bonus** - a two-tier flat bonus based on how much pressure "
+        "has dropped over the lookback window before the window starts - a bigger drop earns "
+        "at least as much as a smaller one, since this reads the actual pressure trend "
+        "instead of inferring \"a storm is coming\" from a precipitation forecast:"
+    )
+    st.latex(
+        r"\text{dropping} = \begin{cases}"
+        r"B_{\text{drop}} & \Delta P \ge \Delta P_{\text{min}} \\"
+        r"B_{\text{drop,minor}} & \Delta P_{\text{minor}} \le \Delta P < \Delta P_{\text{min}} \\"
+        r"0 & \text{otherwise}"
+        r"\end{cases}"
+    )
+    st.markdown(
+        f"$\\Delta P$ is the pressure fall (inHg) over the {PRESSURE_DROP_LOOKBACK_HOURS} hours "
+        f"before the window starts; "
+        f"$\\Delta P_{{\\text{{minor}}}} = {PRESSURE_DROP_MINOR_THRESHOLD_IN}$, "
+        f"$B_{{\\text{{drop,minor}}}} = {PRESSURE_DROP_MINOR_BONUS:.1f}$, "
+        f"$\\Delta P_{{\\text{{min}}}} = {PRESSURE_DROP_THRESHOLD_IN}$, "
+        f"$B_{{\\text{{drop}}}} = {PRESSURE_DROP_BONUS:.1f}$."
     )
 
     st.markdown(
@@ -770,4 +921,17 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "forecast, keeping only non-overlapping windows (best score wins any overlap) so "
         "the results represent genuinely different opportunities rather than the same "
         "window shifted by an hour."
+    )
+
+    st.markdown("**How this maps to the score chart colors**")
+    st.markdown(
+        f"The stacked bars group these five terms into three sources, so each bar shows "
+        f"at a glance where its score came from:\n\n"
+        f"| Chart color | Terms it contains | Can it be negative? |\n"
+        f"|---|---|---|\n"
+        f"| **{CATEGORY_ACTIVITY}** | 1 (solunar activity) | No |\n"
+        f"| **{CATEGORY_WEATHER}** | 2 + 4 - 3 (cold bonus + sweet-spot bonus, "
+        f"net of the rain/wind penalty) | Yes - a wet, windy window pulls its bar below zero |\n"
+        f"| **{CATEGORY_PRESSURE_DROP}** | 5 (falling-pressure bonus) | No |\n\n"
+        f"The three stacked segments always sum to the window's total score."
     )
