@@ -216,6 +216,303 @@ _KIND_EMOJI = {"Major": ":full_moon:", "Minor": ":waxing_gibbous_moon:", "Sunris
 
 
 # ---------------------------------------------------------------------------
+# Weather + hunting-window scoring (Open-Meteo hourly forecast)
+#
+# Cross-references the solunar events above against an hourly weather
+# forecast to surface the best ~6-hour "hunting window" per search - the
+# same deterministic scoring math as this app's private companion (a
+# Slack bot that also offers an LLM-narrated version for personal use).
+# This app is public-facing, so on purpose there is no LLM call anywhere
+# in this section: window selection and ranking are pure arithmetic, so
+# behavior is fully reproducible and there's no API cost or key exposure
+# risk from other people's usage.
+# ---------------------------------------------------------------------------
+
+WINDOW_HOURS = 6
+
+# Per-hour solunar "activity" weights - a Major period counts for twice
+# a Minor period, and an hour containing a sunrise/sunset gets a flat
+# bonus on top of whatever else is happening that hour, since animals
+# are already moving around either event.
+MAJOR_WEIGHT = 3.0
+MINOR_WEIGHT = 1.5
+SUN_EVENT_BONUS = 1.0
+
+# Deer move more in cold weather - a window's average temperature earns
+# a bonus the further it runs below COLD_BASELINE_F, growing by +1.0 per
+# COLD_BONUS_SCALE degrees colder, capped at COLD_BONUS_CAP so a brutal
+# cold snap doesn't swamp the solunar signal entirely.
+COLD_BASELINE_F = 45.0
+COLD_BONUS_SCALE = 15.0
+COLD_BONUS_CAP = 2.0
+
+# Hunting-camp folklore: deer move more in the ~24 hours before a rain
+# system moves in (falling pressure ahead of the front), not during the
+# rain itself. A window gets a flat bonus when it's still reasonably dry
+# (its own average precip chance under PRE_RAIN_PRECIP_THRESHOLD) but
+# precipitation chance climbs to/above that threshold within
+# PRE_RAIN_LOOKAHEAD_HOURS after it ends.
+PRE_RAIN_LOOKAHEAD_HOURS = 24
+PRE_RAIN_PRECIP_THRESHOLD = 50  # percent
+PRE_RAIN_BONUS = 1.5
+
+# How many top-scoring, non-overlapping windows to search for; the UI
+# only shows the top 3 of these, same as the no-LLM fallback on the
+# Slack-bot side.
+CANDIDATE_WINDOW_COUNT = 5
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_hourly_weather(lat, lon, days):
+    """Hourly temp/precip-chance/wind for `days` days at (lat, lon), via
+    Open-Meteo (free, no key) - same service and timezone="auto"
+    resolution as lookup_timezone() above, so these hours line up with
+    the days_data fetch_solunar() produces for the same location.
+    Returns a list of {'dt', 'temp_f', 'precip_chance', 'wind_mph'}
+    dicts (naive local datetimes), one per hour, or None on failure."""
+    try:
+        resp = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat, "longitude": lon,
+                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+                "temperature_unit": "fahrenheit",
+                "wind_speed_unit": "mph",
+                "timezone": "auto",
+                "forecast_days": days,
+            },
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        hourly = data.get("hourly", {})
+        times = hourly.get("time") or []
+        temps = hourly.get("temperature_2m") or []
+        precips = hourly.get("precipitation_probability") or []
+        winds = hourly.get("wind_speed_10m") or []
+        return [
+            {
+                "dt": datetime.fromisoformat(t),
+                "temp_f": temps[i] if i < len(temps) else None,
+                "precip_chance": precips[i] if i < len(precips) else None,
+                "wind_mph": winds[i] if i < len(winds) else None,
+            }
+            for i, t in enumerate(times)
+        ]
+    except (requests.RequestException, ValueError, KeyError):
+        return None
+
+
+def _summarize_weather(samples):
+    """Average temp/wind, peak precip chance across a set of hourly
+    samples - None if there's no weather data at all (rather than a
+    dict of Nones), so callers can tell "no data" apart from "data says
+    calm and dry."."""
+    if not samples:
+        return None
+    temps = [s["temp_f"] for s in samples if s["temp_f"] is not None]
+    precips = [s["precip_chance"] for s in samples if s["precip_chance"] is not None]
+    winds = [s["wind_mph"] for s in samples if s["wind_mph"] is not None]
+    return {
+        "temp_avg": round(sum(temps) / len(temps)) if temps else None,
+        "precip_max": max(precips) if precips else None,
+        "wind_avg": round(sum(winds) / len(winds), 1) if winds else None,
+    }
+
+
+def build_hourly_timeline(days_data, samples, tz):
+    """Flatten fetch_solunar()'s days_data and fetch_hourly_weather()'s
+    samples into one hour-by-hour timeline covering the whole forecast,
+    so the sliding window search below can start at ANY hour instead of
+    a fixed per-day grid. Both inputs share the same "local midnight
+    today" anchor (both derive "today" from the same `tz`), so hours
+    line up without extra conversion.
+
+    Returns a list of {'dt', 'weather', 'activity', 'events'} dicts, one
+    per hour, in chronological order starting at local midnight today.
+    Per-hour activity is overlap-weighted: a Major period spanning parts
+    of two hours contributes proportionally to each rather than
+    double-counting or arbitrarily picking one."""
+    now_local = datetime.now(tz).replace(tzinfo=None)
+    today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    samples_by_hour = {s["dt"].replace(minute=0, second=0, microsecond=0): s for s in samples}
+    all_periods = [p for day in days_data for p in day["periods"]]
+
+    timeline = []
+    for h in range(len(days_data) * 24):
+        hour_start = today_local + timedelta(hours=h)
+        hour_end = hour_start + timedelta(hours=1)
+
+        activity = 0.0
+        events = []
+        for p in all_periods:
+            if p["start"] == p["end"]:
+                if hour_start <= p["start"] < hour_end:
+                    activity += SUN_EVENT_BONUS
+                    events.append(p)
+            else:
+                overlap_hours = (min(p["end"], hour_end) - max(p["start"], hour_start)).total_seconds() / 3600
+                if overlap_hours > 0:
+                    weight = MAJOR_WEIGHT if p["kind"] == "Major" else MINOR_WEIGHT
+                    activity += weight * overlap_hours
+                    events.append(p)
+
+        sample = samples_by_hour.get(hour_start)
+        timeline.append({
+            "dt": hour_start,
+            "weather": _summarize_weather([sample]) if sample else None,
+            "activity": activity,
+            "events": events,
+        })
+
+    return timeline
+
+
+def _upcoming_rain_chance(timeline, start_idx, window_hours):
+    """Max precipitation chance in the PRE_RAIN_LOOKAHEAD_HOURS right
+    after timeline[start_idx:start_idx+window_hours] ends, or None if
+    there's no weather data in that lookahead span. Shared by
+    score_window() (the "before the rain" bonus) and format_window() (so
+    the displayed text can reference the same signal that earned the
+    bonus)."""
+    lookahead = timeline[start_idx + window_hours: start_idx + window_hours + PRE_RAIN_LOOKAHEAD_HOURS]
+    precips = [h["weather"]["precip_max"] for h in lookahead if h["weather"] and h["weather"]["precip_max"] is not None]
+    return max(precips) if precips else None
+
+
+def score_window(timeline, start_idx, window_hours=WINDOW_HOURS):
+    """Combined goodness score for timeline[start_idx:start_idx+window_hours]:
+    summed solunar activity, a cold-weather bonus, a "rain is coming"
+    bonus, and a precipitation/wind penalty. Returns None if the window
+    would run past the end of the timeline, or if it has neither solunar
+    activity nor any weather data at all."""
+    hours = timeline[start_idx:start_idx + window_hours]
+    if len(hours) < window_hours:
+        return None
+    if not any(h["events"] for h in hours) and not any(h["weather"] for h in hours):
+        return None
+
+    score = sum(h["activity"] for h in hours)
+    temps = [h["weather"]["temp_avg"] for h in hours if h["weather"] and h["weather"]["temp_avg"] is not None]
+    precips = [h["weather"]["precip_max"] for h in hours if h["weather"] and h["weather"]["precip_max"] is not None]
+    winds = [h["weather"]["wind_avg"] for h in hours if h["weather"] and h["weather"]["wind_avg"] is not None]
+
+    if temps:
+        avg_temp = sum(temps) / len(temps)
+        score += min(COLD_BONUS_CAP, max(0.0, (COLD_BASELINE_F - avg_temp) / COLD_BONUS_SCALE))
+
+    avg_precip = (sum(precips) / len(precips)) if precips else None
+    if avg_precip is not None:
+        score -= avg_precip / 50.0
+
+    if winds:
+        avg_wind = sum(winds) / len(winds)
+        score -= max(0.0, avg_wind - 10) / 10.0
+
+    upcoming_precip = _upcoming_rain_chance(timeline, start_idx, window_hours)
+    if (
+        upcoming_precip is not None
+        and upcoming_precip >= PRE_RAIN_PRECIP_THRESHOLD
+        and (avg_precip is None or avg_precip < PRE_RAIN_PRECIP_THRESHOLD)
+    ):
+        score += PRE_RAIN_BONUS
+
+    return score
+
+
+def find_candidate_windows(timeline, now_local, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS):
+    """Slide a `window_hours`-wide window across EVERY possible starting
+    hour in `timeline` and return the `top_n` best-scoring,
+    non-overlapping windows, highest score first. A window that has
+    already fully elapsed (its end is at or before `now_local`) is never
+    a candidate. Non-overlap is enforced greedily (best score first,
+    skip anything sharing an hour with an already-picked window) so two
+    windows that are really "the same" opportunity shifted by an hour
+    don't crowd out genuine variety."""
+    scored = []
+    for start_idx in range(len(timeline) - window_hours + 1):
+        window_end = timeline[start_idx]["dt"] + timedelta(hours=window_hours)
+        if window_end <= now_local:
+            continue
+        s = score_window(timeline, start_idx, window_hours)
+        if s is not None:
+            scored.append((s, start_idx))
+    scored.sort(key=lambda pair: pair[0], reverse=True)
+
+    picked = []
+    used_hours = set()
+    for score, start_idx in scored:
+        window_range = range(start_idx, start_idx + window_hours)
+        if used_hours.intersection(window_range):
+            continue
+        picked.append((score, start_idx))
+        used_hours.update(window_range)
+        if len(picked) >= top_n:
+            break
+    return picked
+
+
+def _label_for_date(d, today_date):
+    return "Today" if d == today_date else f"{d.strftime('%a')} {d.month}/{d.day}"
+
+
+def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
+    """One line describing timeline[start_idx:start_idx+window_hours],
+    for direct display in the UI - no LLM narration, just the scored
+    facts."""
+    hours = timeline[start_idx:start_idx + window_hours]
+    start_dt = hours[0]["dt"]
+    end_dt = hours[-1]["dt"] + timedelta(hours=1)
+
+    seen = set()
+    events = []
+    for h in hours:
+        for e in h["events"]:
+            key = (e["kind"], e["start"])
+            if key not in seen:
+                seen.add(key)
+                events.append(e)
+    events.sort(key=lambda e: e["start"])
+
+    parts = []
+    for e in events:
+        if e["start"] == e["end"]:
+            parts.append(f"{e['kind']} {_format_time(e['start'])}")
+        else:
+            parts.append(f"{e['kind']} {_format_time(e['start'])}-{_format_time(e['end'])}")
+    events_text = ", ".join(parts) if parts else "no major/minor feeding activity"
+
+    weathers = [h["weather"] for h in hours if h["weather"]]
+    bits = []
+    avg_precip = None
+    if weathers:
+        temps = [w["temp_avg"] for w in weathers if w["temp_avg"] is not None]
+        precips = [w["precip_max"] for w in weathers if w["precip_max"] is not None]
+        winds = [w["wind_avg"] for w in weathers if w["wind_avg"] is not None]
+        if temps:
+            bits.append(f"avg {round(sum(temps) / len(temps))}°F")
+        if precips:
+            avg_precip = sum(precips) / len(precips)
+            bits.append(f"precip up to {max(precips):.0f}%")
+        if winds:
+            bits.append(f"wind {round(sum(winds) / len(winds), 1)} mph avg")
+
+    upcoming_precip = _upcoming_rain_chance(timeline, start_idx, window_hours)
+    if (
+        upcoming_precip is not None
+        and upcoming_precip >= PRE_RAIN_PRECIP_THRESHOLD
+        and (avg_precip is None or avg_precip < PRE_RAIN_PRECIP_THRESHOLD)
+    ):
+        bits.append(f"rain likely within {PRE_RAIN_LOOKAHEAD_HOURS}h - pre-front movement bump expected")
+
+    weather_text = ", ".join(bits) if bits else "weather data unavailable"
+
+    day_label = _label_for_date(start_dt.date(), today_date)
+    return f"{day_label} {_format_time(start_dt)} - {_format_time(end_dt)}: {events_text} | {weather_text}"
+
+
+# ---------------------------------------------------------------------------
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
@@ -265,6 +562,30 @@ if submitted:
             st.caption(f"Timezone: {tz_name}")
 
             days_data = fetch_solunar(loc["lat"], loc["lon"], tz, days)
+
+            with st.spinner("Fetching weather forecast..."):
+                weather_samples = fetch_hourly_weather(loc["lat"], loc["lon"], days)
+
+            if weather_samples:
+                timeline = build_hourly_timeline(days_data, weather_samples, tz)
+                now_local = datetime.now(tz).replace(tzinfo=None)
+                candidates = find_candidate_windows(timeline, now_local)
+                if candidates:
+                    st.subheader(":dart: Best Hunting Windows")
+                    st.caption(
+                        "Ranks every possible 6-hour window by solunar activity, "
+                        "temperature, wind, and rain timing - pure scoring, no AI."
+                    )
+                    today_date = now_local.date()
+                    for i, (_score, start_idx) in enumerate(candidates[:3], start=1):
+                        st.write(f"**#{i}** - {format_window(timeline, start_idx, today_date)}")
+                    st.divider()
+            else:
+                st.caption(
+                    ":warning: Couldn't fetch the weather forecast, so hunting-window "
+                    "ranking is unavailable right now - feeding times are still shown below."
+                )
+
             for day in days_data:
                 with st.container(border=True):
                     st.markdown(f"**{day['label']}**")

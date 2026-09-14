@@ -25,6 +25,17 @@ Computed locally with the [`ephem`](https://pypi.org/project/ephem/)
 astronomy library (PyEphem) - no external solunar service, no network
 call for the math itself.
 
+On top of the daily feeding times, the app also cross-references an
+hourly weather forecast to rank the best ~6-hour "hunting windows"
+over the search period - rewarding strong solunar activity, colder
+temperatures (deer move more in the cold), and the ~24 hours before a
+rain system arrives (deer move more ahead of a front, not during the
+rain itself), while penalizing high precipitation chance and wind.
+This ranking is pure arithmetic - **no LLM is used anywhere in this
+app**, on purpose, since it's public-facing and window selection needs
+to be reproducible with no API cost or key exposure for other people's
+usage.
+
 ## Setup
 
 ```
@@ -70,6 +81,16 @@ to open in your browser.
   transit/antitransit/rising/setting and sun rising/setting for each
   day, searched independently per calendar day so one failed/missing
   event can't cascade into every later day being wrong.
+- **Hunting-window ranking**: hourly temperature/precipitation
+  chance/wind for the search period ([Open-Meteo](https://open-meteo.com/)'s
+  hourly forecast, same free/keyless service as the timezone lookup) is
+  flattened into an hour-by-hour timeline alongside the solunar events,
+  then every possible 6-hour window is scored: Major periods weight 3x,
+  Minor periods 1.5x, a sunrise/sunset in the window adds a flat bonus,
+  colder average temperature adds a bonus (capped), rain likely within
+  24 hours after a still-mostly-dry window adds a bonus, and
+  precipitation/wind subtract from the score. The top 3 non-overlapping
+  windows are shown as-is - no AI narration, just the ranked facts.
 
 Both the geocoding and timezone lookups are cached in-memory
 (`st.cache_data`, 1 hour TTL) so re-running a search for the same
