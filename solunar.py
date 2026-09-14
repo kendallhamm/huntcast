@@ -11,10 +11,13 @@ library - no external solunar service involved.
 Run: streamlit run solunar.py
 """
 
+import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import altair as alt
 import ephem
+import pandas as pd
 import requests
 import streamlit as st
 
@@ -261,25 +264,33 @@ PRE_RAIN_BONUS = 1.5
 # Slack-bot side.
 CANDIDATE_WINDOW_COUNT = 5
 
+# Open-Meteo's hourly forecast rejects forecast_days > 16 (HTTP 400), but
+# the "Days" slider below goes up to 30 so solunar-only (moon/sun) times
+# can still be shown further out via ephem, which has no such cap.
+# Clamping here keeps the weather/ranking feature working for the first
+# 16 days instead of failing outright the moment someone picks >16.
+OPEN_METEO_MAX_FORECAST_DAYS = 16
+
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_hourly_weather(lat, lon, days):
-    """Hourly temp/precip-chance/wind for `days` days at (lat, lon), via
-    Open-Meteo (free, no key) - same service and timezone="auto"
-    resolution as lookup_timezone() above, so these hours line up with
-    the days_data fetch_solunar() produces for the same location.
-    Returns a list of {'dt', 'temp_f', 'precip_chance', 'wind_mph'}
-    dicts (naive local datetimes), one per hour, or None on failure."""
+    """Hourly temp/precip-chance/wind speed+direction for `days` days at
+    (lat, lon), via Open-Meteo (free, no key) - same service and
+    timezone="auto" resolution as lookup_timezone() above, so these
+    hours line up with the days_data fetch_solunar() produces for the
+    same location. Returns a list of {'dt', 'temp_f', 'precip_chance',
+    'wind_mph', 'wind_dir_deg'} dicts (naive local datetimes), one per
+    hour, or None on failure."""
     try:
         resp = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": lat, "longitude": lon,
-                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+                "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m",
                 "temperature_unit": "fahrenheit",
                 "wind_speed_unit": "mph",
                 "timezone": "auto",
-                "forecast_days": days,
+                "forecast_days": min(days, OPEN_METEO_MAX_FORECAST_DAYS),
             },
             timeout=8,
         )
@@ -290,12 +301,14 @@ def fetch_hourly_weather(lat, lon, days):
         temps = hourly.get("temperature_2m") or []
         precips = hourly.get("precipitation_probability") or []
         winds = hourly.get("wind_speed_10m") or []
+        wind_dirs = hourly.get("wind_direction_10m") or []
         return [
             {
                 "dt": datetime.fromisoformat(t),
                 "temp_f": temps[i] if i < len(temps) else None,
                 "precip_chance": precips[i] if i < len(precips) else None,
                 "wind_mph": winds[i] if i < len(winds) else None,
+                "wind_dir_deg": wind_dirs[i] if i < len(wind_dirs) else None,
             }
             for i, t in enumerate(times)
         ]
@@ -303,20 +316,59 @@ def fetch_hourly_weather(lat, lon, days):
         return None
 
 
+COMPASS_POINTS = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+]
+
+
+def _compass_direction(degrees):
+    """Convert a wind-direction-from bearing in degrees to a 16-point
+    compass label (e.g. 270 -> "W")."""
+    return COMPASS_POINTS[round(degrees / 22.5) % 16]
+
+
+def _circular_mean_deg(degrees, weights=None):
+    """Average compass bearings correctly - a naive mean of e.g. [350,
+    10] gives 180 (due south) instead of 0 (due north), since bearings
+    wrap at 360. Averaged as unit vectors instead, optionally weighted
+    (by wind speed, so calmer/noisier hours don't skew the direction as
+    much as hours where the wind is actually blowing meaningfully).
+    Returns None for an empty input or if the vectors cancel out
+    exactly."""
+    if not degrees:
+        return None
+    if weights is None:
+        weights = [1.0] * len(degrees)
+    sin_sum = sum(w * math.sin(math.radians(d)) for d, w in zip(degrees, weights))
+    cos_sum = sum(w * math.cos(math.radians(d)) for d, w in zip(degrees, weights))
+    if sin_sum == 0 and cos_sum == 0:
+        return None
+    return math.degrees(math.atan2(sin_sum, cos_sum)) % 360
+
+
 def _summarize_weather(samples):
-    """Average temp/wind, peak precip chance across a set of hourly
-    samples - None if there's no weather data at all (rather than a
-    dict of Nones), so callers can tell "no data" apart from "data says
-    calm and dry."."""
+    """Average temp/wind speed/wind direction, peak precip chance
+    across a set of hourly samples - None if there's no weather data at
+    all (rather than a dict of Nones), so callers can tell "no data"
+    apart from "data says calm and dry."."""
     if not samples:
         return None
     temps = [s["temp_f"] for s in samples if s["temp_f"] is not None]
     precips = [s["precip_chance"] for s in samples if s["precip_chance"] is not None]
     winds = [s["wind_mph"] for s in samples if s["wind_mph"] is not None]
+    wind_dir_pairs = [
+        (s["wind_dir_deg"], s["wind_mph"]) for s in samples
+        if s.get("wind_dir_deg") is not None and s.get("wind_mph") is not None
+    ]
     return {
         "temp_avg": round(sum(temps) / len(temps)) if temps else None,
         "precip_max": max(precips) if precips else None,
         "wind_avg": round(sum(winds) / len(winds), 1) if winds else None,
+        "wind_dir_deg": (
+            _circular_mean_deg([d for d, _ in wind_dir_pairs], [w for _, w in wind_dir_pairs])
+            if wind_dir_pairs else None
+        ),
     }
 
 
@@ -490,13 +542,23 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
         temps = [w["temp_avg"] for w in weathers if w["temp_avg"] is not None]
         precips = [w["precip_max"] for w in weathers if w["precip_max"] is not None]
         winds = [w["wind_avg"] for w in weathers if w["wind_avg"] is not None]
+        wind_dir_pairs = [
+            (w["wind_dir_deg"], w["wind_avg"]) for w in weathers
+            if w.get("wind_dir_deg") is not None and w.get("wind_avg") is not None
+        ]
         if temps:
             bits.append(f"avg {round(sum(temps) / len(temps))}°F")
         if precips:
             avg_precip = sum(precips) / len(precips)
             bits.append(f"precip up to {max(precips):.0f}%")
         if winds:
-            bits.append(f"wind {round(sum(winds) / len(winds), 1)} mph avg")
+            wind_bit = f"wind {round(sum(winds) / len(winds), 1)} mph avg"
+            mean_dir = _circular_mean_deg(
+                [d for d, _ in wind_dir_pairs], [w for _, w in wind_dir_pairs]
+            ) if wind_dir_pairs else None
+            if mean_dir is not None:
+                wind_bit += f" from {_compass_direction(mean_dir)}"
+            bits.append(wind_bit)
 
     upcoming_precip = _upcoming_rain_chance(timeline, start_idx, window_hours)
     if (
@@ -574,15 +636,47 @@ if submitted:
                     st.subheader(":dart: Best Hunting Windows")
                     st.caption(
                         "Ranks every possible 6-hour window by solunar activity, "
-                        "temperature, wind, and rain timing - pure scoring, no AI."
+                        "temperature, wind, and rain timing."
                     )
                     today_date = now_local.date()
-                    for i, (_score, start_idx) in enumerate(candidates[:3], start=1):
+                    top_candidates = candidates[:3]
+                    for i, (_score, start_idx) in enumerate(top_candidates, start=1):
                         st.write(f"**#{i}** - {format_window(timeline, start_idx, today_date)}")
+
+                    score_df = pd.DataFrame({
+                        "Window": [
+                            f"#{i} {_label_for_date(timeline[start_idx]['dt'].date(), today_date)} "
+                            f"{_format_time(timeline[start_idx]['dt'])}"
+                            for i, (_score, start_idx) in enumerate(top_candidates, start=1)
+                        ],
+                        "Score": [round(score, 1) for score, _ in top_candidates],
+                    }).set_index("Window")
+                    st.bar_chart(score_df, y="Score")
+
+                    st.subheader(":chart_with_upwards_trend: Forecast Overview")
+                    st.caption(
+                        "Hourly solunar activity (area) vs. temperature (line) across "
+                        "the whole forecast."
+                    )
+                    timeline_df = pd.DataFrame({
+                        "dt": [h["dt"] for h in timeline],
+                        "activity": [h["activity"] for h in timeline],
+                        "temp_f": [h["weather"]["temp_avg"] if h["weather"] else None for h in timeline],
+                    })
+                    base = alt.Chart(timeline_df).encode(x=alt.X("dt:T", title="Date / Time"))
+                    activity_area = base.mark_area(opacity=0.35, color="#4C78A8").encode(
+                        y=alt.Y("activity:Q", title="Solunar Activity"),
+                    )
+                    temp_line = base.mark_line(color="#E45756", strokeWidth=2).encode(
+                        y=alt.Y("temp_f:Q", title="Temp (°F)"),
+                    )
+                    overview_chart = alt.layer(activity_area, temp_line).resolve_scale(y="independent")
+                    st.altair_chart(overview_chart, width="stretch")
+
                     st.divider()
             else:
-                st.caption(
-                    ":warning: Couldn't fetch the weather forecast, so hunting-window "
+                st.warning(
+                    "Couldn't fetch the weather forecast, so hunting-window "
                     "ranking is unavailable right now - feeding times are still shown below."
                 )
 
