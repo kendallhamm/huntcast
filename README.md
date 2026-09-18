@@ -57,10 +57,10 @@ k = 3.0 / 142 ≈ 0.0211
 ```
 
 `k` is anchored so peak rut - the largest effect in the source data,
-+142 yph - is worth 3.0 points. The consequence is that **no weight in
-this model is hand-tuned**: each is whatever a study measured, so the
-relative ordering of rut vs. dawn/dusk vs. solunar is auditable rather
-than a matter of taste.
++142 yph - is worth 3.0 points. The consequence is that **no activity
+weight in this model is hand-tuned**: each is whatever a study measured,
+so the relative ordering of rut vs. dawn/dusk vs. solunar is auditable
+rather than a matter of taste.
 
 Averaging rather than summing is what makes effects of different
 *durations* comparable. Rut elevates movement across every hour of a
@@ -88,39 +88,62 @@ yph season mean**:
 A term's actual contribution to a window also depends on how many of the
 window's hours it covers - a dawn band covers ~2 of 6, so it adds ~0.34.
 
-### The five terms
+### The six terms
 
 | # | Term | Basis |
 |---|---|---|
 | 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. **Measured.** |
 | 2 | **Rut phase** | 14-day bands around a user-supplied peak breeding date, at the measured yph above. **Measured** (effect size); **user-supplied** (timing). |
 | 3 | **Cold** | Degrees below this location's own recent normal *for that hour of day*, ramping to 16 yph at 15°F below normal. **Judgment call, bounded.** |
-| 4 | **Rain/wind penalty** | Rain to -16 yph at 100% chance; wind to -8 yph, engaging only above 15 mph and maxing at 40 mph. **Judgment call, bounded.** |
-| 5 | **Pressure** | 5 yph for the 29.8-30.3 inHg band, plus 5 yph (or 2.5) for a falling 24-hour trend. **Folklore, deliberately near-token.** |
+| 4 | **Rain/wind penalty** | Rain to -8 yph at 100% chance; wind to -8 yph, engaging only above 15 mph and maxing at 40 mph. **Judgment call, bounded.** |
+| 5 | **Pressure** | 5 yph (or 2.5) for a falling 24-hour trend. The 29.8-30.3 inHg "sweet spot" band is still reported in the window text but carries **zero** weight. **Folklore, near-token.** |
+| 6 | **Dawn/dusk damping** | Terms 3-5 are evaluated hour by hour and multiplied by `1 - 0.5 × (fraction of the hour inside a sunrise/sunset halo)`. **Structure from two studies; size a judgment call.** |
 
 The weather terms (3-5) could not be calibrated the same way, because no
-located study reports weather effects as a movement-rate change. They are
+located study reports weather effects as a movement-rate change - a
+fresh literature search through 2026 did not find one either. They are
 bounded judgment calls, and the bounds are chosen to preserve evidential
 ordering:
 
-- The ceiling for the best-supported weather terms is **one dawn's worth**
+- The ceiling for the best-supported weather term is **one dawn's worth**
   of contribution (48 yph over ~2 of 6 hours ≈ 16 yph averaged), so
   weather can match but never dominate the best-established daily signal.
 - **Cold gets that full ceiling** - temperature is the only weather
-  variable with repeated support (Webb et al. 2010).
-- **Wind gets half of it** - weak and inconsistent in the fine-scale GPS
-  literature.
-- **Pressure gets half the Penn State null-result spread** (~±10 yph →
-  5 yph), keeping the entire pressure block below the cold term, which
-  matches the fact that temperature has repeated support and pressure has
-  none.
+  variable with repeated support (5 of the 8 significant models in Webb
+  et al. 2010).
+- **Rain and wind each get half of it**, at the same tier as each other,
+  because they have the same evidential standing: each was significant
+  in exactly 1 of those 8 models. An earlier version gave rain the full
+  ceiling on the strength of a Penn State storm analysis; the second
+  citation audit found that source's two years disagree on *direction*
+  (see Sources), so it supports neither the size nor the sign of a rain
+  penalty. The penalty's direction is a judgment call.
+- **Falling pressure gets half the Penn State null-result spread** (~±10
+  yph → 5 yph). It keeps a token weight because Webb et al.'s day-over-day
+  analysis of weather *changes* attributed 3 of 10 significant models to
+  pressure.
+- **The static pressure band gets nothing.** No located study tests a
+  static pressure level; the closest thing to a test is Webb et al.'s
+  within-day result, where pressure was the one variable of five with no
+  linear trend. The constant stays in the code at 0 so it is a single
+  number to raise if evidence appears.
+- **Every weather term is damped by half inside dawn/dusk halos.**
+  Goethlich 2019 and Webb et al. 2010 independently found weather effects
+  concentrate in non-peak hours; Hunsaker et al. 2025 found no weather
+  effect at all on rut-period movement. The sources say "least likely"
+  and "less pronounced", not "absent", so the damping is 0.5 rather than
+  1.0.
+- **Sanity bound on the whole block:** Webb et al. 2010's weather
+  parameter estimates never exceeded ~29 m/h (~32 yph), and the authors
+  attribute even that partly to collar error. The most this block can
+  move a window is about +21 / -16 yph, inside that bound.
 
 ### Why cold is measured against a local normal
 
 The previous version of this model gave a bonus for dropping below a flat
 45°F. That doesn't generalize down the East Coast - 38°F means something
 very different in Maine than in Georgia, and deer respond to change from
-what they're acclimated to. The app now requests 7 days of *past* hourly
+what they're acclimated to. The app requests 7 days of *past* hourly
 observations alongside the forecast and builds a per-hour-of-day normal
 from them, so a daytime window is compared against daytime history rather
 than a day/night average.
@@ -131,11 +154,14 @@ previously had no history to reach into, so **every window in the first
 
 ## Sources
 
-Every citation below was verified against the published source — abstract
-or full text retrieved and read, bibliographic details confirmed against
-Crossref, and every URL checked to resolve. Each entry states exactly
-what this project takes from it, and flags where a source *disagrees*
-with the model.
+Every citation below has been through two independent verification
+passes: bibliographic details confirmed, every URL checked to resolve,
+and every number attributed to a source re-read against the abstract or
+full text where accessible. Each entry states exactly what this project
+takes from it, flags where a source *disagrees* with the model, and notes
+any figure that could only be checked against an abstract rather than
+the full text. Corrections from the second pass (September 2026) are
+marked **Audit note**.
 
 ### Primary — supplies the weights
 
@@ -143,21 +169,27 @@ with the model.
 2025.** *Lunar Legends: Does the Moon Influence Buck Activity?*
 Mississippi State University Extension Publication 4068.
 <https://extension.msstate.edu/publications/lunar-legends-does-the-moon-influence-buck-activity>
+(PDF: <https://extension.msstate.edu/sites/default/files/publications/P4068_Lunar_web.pdf>)
 
 - **Study design:** 48 GPS-collared bucks, central Mississippi, 15-minute
-  fixes, September–February, 2 years. Crucially, each buck is compared
-  against *his own* usual movement at the same time of day within a
-  ±1-week window, which nets out rut phase and individual personality.
+  fixes, September–February, 2 years. The analysis controls for each
+  buck's own movement pattern, which nets out rut phase and individual
+  personality when testing the moon.
 - **What this project takes from it:** every activity weight in the
   model. The 269 yph daytime season mean and 34% bedded baseline; the
   dawn/dusk figure (317 yph and 21% bedded within 1 hour of sunrise or
   sunset, i.e. **+48 yph**); the solunar results (**major +3 yph, minor
-  -0.1 yph**, plus null results for moon phase, phase × position
-  combinations, perigee/apogee, and moon × dawn/dusk combinations); and
-  the full rut-phase ladder (**pre +4, early +104, peak +142, late +78,
-  post +9, no-rut -40 yph**). Also the 14-day phase spacing (Mississippi
-  pre-rut Nov 27 / early Dec 11 / peak Dec 25 / late Jan 8 / post Jan 22)
-  and the peak-rut baseline of 409 yph / 22% bedded.
+  -0.1 yph**, plus near-zero results for moon phase, phase × position
+  combinations, perigee **+3** / apogee **-4** yph, and moon × dawn/dusk
+  combinations); and the full rut-phase ladder (**pre +4, early +104,
+  peak +142, late +78, post +9, no-rut -40 yph**). Also the 14-day phase
+  spacing (Mississippi pre-rut Nov 27 / early Dec 11 / peak Dec 25 / late
+  Jan 8 / post Jan 22) and the peak-rut baseline of 409 yph / 22% bedded.
+- **Audit note:** every number above was re-confirmed against the
+  publication PDF. An earlier README described the method as comparing
+  each buck to himself "within a ±1-week window"; that specific wording
+  could not be found in the publication and has been softened to what
+  it does say.
 - **Caveats carried into the app:** these are **buck** movement rates,
   daytime only, from a single Mississippi population.
 
@@ -169,33 +201,46 @@ Environmental Influences Using GPS Collars.* International Journal of
 Ecology 2010:1–12, article 459610. DOI 10.1155/2010/459610.
 <https://doi.org/10.1155/2010/459610>
 
-- **Study design:** 17 female and 15 male white-tailed deer, Oklahoma,
-  7 years, 3 seasons, 15-minute relocation attempts. Five weather
-  variables: air temperature, wind speed, pressure, relative humidity,
-  total precipitation.
+- **Study design:** 17 female and 15 male white-tailed deer, Oklahoma
+  (Noble Foundation), 7 years, 3 seasons, 15-minute relocation attempts.
+  Five weather variables: air temperature, wind speed, pressure, relative
+  humidity, total precipitation.
 - **What this project takes from it:**
   - The weather result, verbatim: *"We found general linear trends in
     movements related to 4 of the 5 weather variables in only 8 of 80
     (10%) models. Temperature influenced movements in 5 of 8 cases and
     rain, relative humidity and wind speed each in 1 case."* This is why
-    temperature is the only weather variable given the full ceiling.
-    Note the arithmetic: 5 + 1 + 1 + 1 = 8, so **pressure is the one
-    variable of five with no linear trend at all** — the single
-    strongest justification for downweighting the pressure terms. The
-    paper adds that *"parameter estimates of the 8 significant models do
-    not provide useful biological"* interpretation.
-  - The independent null for **moon phase** on daily, nocturnal and
-    diurnal movement, corroborating Neary et al.
+    temperature is the only weather variable given the full ceiling, and
+    why rain and wind share a tier. Note the arithmetic: 5 + 1 + 1 + 1 =
+    8, so **pressure is the one variable of five with no linear trend at
+    all** — the strongest justification for zeroing the static pressure
+    band. The paper adds that *"parameter estimates of the 8 significant
+    models do not provide useful biological"* interpretation.
+  - The size of those estimates: weather parameter estimates were
+    **≤29 m/h** (~32 yph), which the authors attribute partly to collar
+    error and path tortuosity. Used as the sanity ceiling on the whole
+    weather block.
+  - The independent null for **moon phase**: *"Moon phase had no effect
+    on daily, nocturnal, and diurnal deer movements"*, corroborating
+    Neary et al.
   - The conclusion that *"routine crepuscular movements... appear to be
     the most important factors influencing movements"*, and that
     *"hourly and daily variation in weather events have minimal impact"* —
     the basis for dawn/dusk outweighing solunar, and for the weather
     block being capped below the activity block.
+  - The timing of the weather effects that did appear — at 0100–0200 and
+    1300, *"hours of limited movements"* — which, together with Goethlich
+    2019, is the basis for damping weather inside dawn/dusk halos.
   - **Partial disagreement, reported honestly:** in a separate
     day-over-day analysis, weather changes affected movements in 10 of
     80 models (12.5%), and **pressure accounted for 3 of those 10** —
     more than precipitation. So pressure is not wholly inert, which is
-    why its weight is small rather than zero.
+    why the *falling-pressure* term is small rather than zero.
+    **Audit note:** the 10-of-80 / 3-of-10 tally lives in the full-text
+    tables, which are paywalled; the second audit could confirm only that
+    pressure effects appeared in three season/time-specific instances
+    (females spring 0100h, summer 0200h; males winter 1300h). Consistent,
+    but treat the exact tally as full-text-only.
   - An independent corroboration of the rut effect's *direction*: *"Male
     total daily movements were 20% greater during rut (7,363 m ± 364)
     than postrut (6,156 m ± 260)."*
@@ -206,17 +251,24 @@ Ecology 2010:1–12, article 459610. DOI 10.1155/2010/459610.
 - **What it is:** a research-project blog post reporting the study's own
   GPS data. **Not peer-reviewed** — flagged as such because this project
   leans on it for the pressure downweighting.
-- **Study design:** 30 storm events, 52,279 GPS locations, 4–8 collared
-  adult females, 2016–2017.
+- **Study design:** 30 storm events, 52,279 GPS locations, 4 collared
+  adult females in 2016 and 8 in 2017. The storm record itself spans
+  January–April 2015–2017; the collared-deer data is 2016–2017.
 - **What this project takes from it:** the finding of **"no statistical
   or biological significance of oncoming winter storms on behavior or
   movement"**, and the hourly movement rates behind it (before ~102–105,
   during ~98–113, after ~94–111, control ~102–111 yards/hour). The
   roughly ±10 yph spread across those conditions is the upper bound the
-  pressure terms are pinned to — at half that value, since it bounds an
-  effect the study could not detect at all. Also the finding that deer
-  moved **less during** storms, which is the basis for the precipitation
-  penalty's direction.
+  falling-pressure term is pinned to — at half that value, since it
+  bounds an effect the study could not detect at all.
+- **Audit note — this source no longer backs the rain penalty.** An
+  earlier README cited it for "deer moved less during storms" as the
+  basis for the precipitation penalty's direction. Re-read by year, the
+  data says the opposite in 2016 (102 yph outside storms vs. **113
+  during**, 111 after) and the claimed direction only in 2017 (111 vs.
+  **98** during, 94 after). Two years, two signs, and a stated null
+  result do not establish a direction. The rain penalty's sign is now
+  labelled a judgment call and its ceiling has been halved.
 
 **Pennsylvania Game Commission** — *When is the rut?*
 <https://www.pa.gov/agencies/pgc/wildlife/discover-pa-wildlife/white-tailed-deer/when-is-the-rut>
@@ -230,13 +282,20 @@ Ecology 2010:1–12, article 459610. DOI 10.1155/2010/459610.
   November into early December). November 15 is the midpoint of that
   mid-November peak. The Commission separately concludes that deer
   follow their natural breeding schedule rather than lunar cycles.
-- **Verification note:** a widely repeated figure attributes a more
-  precise "**peak conception November 13–17**, half of does bred by
-  November 13" to the Penn State Deer-Forest Study. That figure could
-  **not** be confirmed on a Penn State primary source, only in secondary
-  hunting-press articles, so this project cites the Game Commission's
-  directly verified "mid-November" instead and does not rely on the
-  narrower claim.
+- **Audit note on the "November 13–17" figure.** A widely repeated claim
+  attributes "peak conception November 13–17, half of does bred by
+  November 13" to the Penn State Deer-Forest Study. The second audit
+  found a genuine Penn State primary source for the *second half*: the
+  Deer-Forest Study's own posts
+  (<https://www.deer.psu.edu/the-rut-is-half-over/>,
+  <https://www.deer.psu.edu/how-to-predict-the-rut/>) state that "by
+  November 13th half the females in Pennsylvania become pregnant",
+  working from the same Game Commission fetal data set. No Penn State
+  source states a **13–17** range; every accessible page gives the single
+  date. So the app cites "mid-November, half bred by Nov 13" and does not
+  use the five-day window. An earlier version of the app's code comments
+  also asserted a Game Commission "November 10–20" range that appears
+  nowhere on the Commission's page; that has been removed.
 
 **Hunsaker, M.A., M.L.J. Gilbertson, D.J. Storm, and W.C. Turner. 2025.**
 *The Breeding Season and Movement Ecology of Male White-Tailed Deer in
@@ -245,23 +304,35 @@ Southwest Wisconsin.* Ecology and Evolution 15(7):e71589. DOI
 <https://pmc.ncbi.nlm.nih.gov/articles/PMC12240682/>
 
 - **Study design:** 188 collared male deer, southwest Wisconsin (Dane,
-  Iowa, Grant counties), 15 October–1 December, 2017–2020.
+  Iowa, Grant counties), 15 October–1 December, 2017–2020, hourly GPS
+  fixes; changepoint analysis on movement rate plus fawn-conception
+  backdating.
 - **What this project takes from it:** the changepoint-derived peak
   breeding window of **October 23–November 12**, plus the paper's framing
   that variation in how studies define the breeding season *"created
   uncertainty about whether regional differences in deer breeding ecology
   stem from ecological factors or methodological inconsistencies."* Used
-  for one specific purpose: to show peak rut date is *not* a clean
-  function of latitude — Wisconsin (~43°N) peaks roughly two weeks
-  *earlier* than Pennsylvania (~41°N) despite being further north, and
-  central Mississippi (~33°N) peaks December 25. That is why the app
-  **asks** for a peak rut date instead of computing one from latitude.
+  to show peak rut date is *not* a clean function of latitude — Wisconsin
+  (~43°N) peaks roughly two weeks *earlier* than Pennsylvania (~41°N)
+  despite being further north, and central Mississippi (~33°N) peaks
+  December 25. That is why the app **asks** for a peak rut date instead of
+  computing one from latitude.
+- **Added in the second pass:** the paper found **"no significant effect
+  of weather, year, hunting seasons, or the timing of opening firearm
+  weekend on movement metrics"** during the rut. That is a third,
+  larger-sample data point for keeping the weather block small, and a
+  caution against building an opening-day or day-of-week hunting-pressure
+  proxy without regional evidence. Also: 2-year-old bucks had the highest
+  movement rates of any age class.
 
 ### Dissenting — solunar studies that disagree
 
 The three studies below test solunar theory directly and reach three
 different answers. That lack of replication, not any single null result,
-is the reason solunar carries near-zero weight here.
+is the reason solunar carries near-zero weight here. A search for a
+meta-analysis or systematic review of solunar-theory tests across
+species found none; the closest things are single-species primary
+studies and trade-press skepticism.
 
 **Sullivan, J.D., S.S. Ditchkoff, B.A. Collier, C.R. Ruth, and J.B.
 Raglin. 2016.** *Movement with the moon: white-tailed deer activity and
@@ -270,17 +341,18 @@ Wildlife Agencies 3:225–232.
 <https://seafwa.org/journal/2016/movement-moon-white-tailed-deer-activity-and-solunar-events>
 
 - **Study design:** 38 adult male white-tailed deer, GPS locations every
-  30 minutes, August–December 2010–2012, at Brosnan Forest, Dorchester,
-  South Carolina.
+  30 minutes, August–December 2010–2012, at Brosnan Forest, Dorchester
+  County, South Carolina. Logistic regression on activity *odds*, not a
+  movement rate.
 - **What this project takes from it:** a **split** result. On days near a
   new or full moon, activity probability during **minor** periods *rose*
   — moonrise 0.384 → 0.564, moonset 0.403 → 0.591 — while during
   **major** periods it *fell*: moon overhead 0.540 → 0.413 and underfoot
-  0.516 → 0.305. The paper opens by stating deer activity patterns "are
-  predominately crepuscular", and concludes that solunar events have
-  "some association with deer activity. However, the relationships
-  between lunar events and lunar phase expressed in solunar charts **may
-  be misleading**."
+  0.516 → 0.305; far from a new or full moon the pattern reversed. The
+  paper opens by stating deer activity patterns "are predominately
+  crepuscular", and concludes that solunar events have "some association
+  with deer activity. However, the relationships between lunar events and
+  lunar phase expressed in solunar charts **may be misleading**."
 - **Correction note:** an earlier draft of this README claimed this paper
   was the reason the Major weight is left positive. That was wrong — this
   paper found major-period activity *decreasing* on high-rated days. The
@@ -303,6 +375,11 @@ of Male White-Tailed Deer.* Southeastern Naturalist 24(2):137–150. DOI
   (minor), i.e. *less* likely. The authors' own conclusion: *"This study
   supports prior findings that solunar charts show inconsistencies in
   predictions of Deer activity."*
+- **Audit note:** both audits could reach only the abstract; the full
+  text is paywalled. The odds ratios above appear in the abstract, so
+  they are confirmed, but nothing beyond it has been checked. An
+  Auburn-hosted PDF with a similar filename is a *different*, earlier
+  Swartout paper — do not confuse the two.
 - **Why the weights weren't changed:** the result is reported as odds of
   being "active", not as a movement rate, so there is no non-invented way
   to convert it into the yph currency every other weight uses.
@@ -313,69 +390,100 @@ of Male White-Tailed Deer.* Southeastern Naturalist 24(2):137–150. DOI
   matter more than minor ones, and minor periods may be neutral or
   negative** — which is why `MINOR_YPH` is 0.0.
 
-### Consulted — informs known gaps, not implemented
+### Consulted — informs structure or known gaps
+
+**Goethlich, J. 2019.** *Effects of Abiotic Factors on White-tailed Deer
+Activity in South Carolina.* M.S. thesis, Auburn University (chair:
+S.S. Ditchkoff). <https://etd.auburn.edu/handle/10415/7077>
+
+- **Study design:** 116 GPS-collared adult white-tailed deer, 2009–2018,
+  South Carolina; activity classified from interfix step length and
+  turning angles; each abiotic factor modelled separately by logistic
+  regression. **Audit note:** the thesis PDF could not be text-extracted
+  by either audit, so the 116 / 2009–2018 figures rest on indexed
+  abstract text; nothing found contradicts them.
+- **What this project takes from it — now implemented:** the thesis
+  abstract's conclusion, verbatim: *"responses to abiotic factors were
+  typically less pronounced than circadian fluctuations in activity, and
+  occurred most often during non-peak times of activity."* A summary of
+  the same work adds: the authors were *"most likely to see a significant
+  relationship between abiotic factors and activity during daytime and
+  nighttime and least likely to see an effect in the morning and
+  evening."* The first half supports capping weather below the
+  daily-rhythm terms. The second half is why every weather term is now
+  **damped by half inside the dawn/dusk halos** (term 6). **Webb et al.
+  2010 found the same thing independently** (weather effects at 0100–0200
+  and 1300, "hours of limited movements"), so this is two studies, not
+  one — which is the bar this project set for a structural change.
+- **Disagreement, reported honestly:** this thesis found that weather
+  condition, temperature, wind speed, **barometric pressure**, moon
+  phase, moon position and nocturnal brightness all "affected activity in
+  some seasons and times of day." So neither pressure nor moon is
+  universally inert — another reason both are downweighted rather than
+  removed.
+- **Not independent of Sullivan et al. 2016:** both studies come from the
+  Auburn Deer Lab and both used deer at Brosnan Forest, South Carolina.
+  Treat them as one study site, not two replications.
 
 **Little, A.R., S.L. Webb, S. Demarais, K.L. Gee, S.K. Riffell, and J.A.
 Gaskamp. 2016.** *Hunting intensity alters movement behaviour of
 white-tailed deer.* Basic and Applied Ecology 17:360–369. DOI
 10.1016/j.baae.2015.12.003. <https://doi.org/10.1016/j.baae.2015.12.003>
 
-- **Study design:** southern Oklahoma; GPS locations at 30-minute
-  intervals under manipulated hunting-risk treatments.
+- **Study design:** 37 adult (≥2.5 yr) **male** deer, Love County,
+  southern Oklahoma (Noble Foundation); GPS locations at 30-minute
+  intervals under manipulated hunting-risk treatments (control / low /
+  high) over 36 days.
 - **What this project takes from it:** confirmation that **hunting
-  pressure is a real movement driver** — movement rate was greater under
-  risk treatments than controls, while low hunting pressure produced no
-  biologically significant change in female movement. Not implemented,
-  because the app has no data source for local hunting pressure and a
-  weekend/opening-day proxy would behave very differently on public vs.
-  private land. Listed as a known gap below.
-- **Correction note — this is why the citation audit mattered.** An
-  earlier version of this code cited "Little et al. 2016, *Effects of
-  Weather on Habitat Selection and Movement of White-tailed Deer*" in
-  support of the falling-pressure bonus. **That title does not exist.**
-  The author/year are real but were attached to a fabricated title, and
-  the actual Little et al. 2016 is the hunting-intensity paper above,
-  which says nothing about barometric pressure. The false citation has
-  been removed.
+  pressure is a real movement driver** — movement was greater under risk
+  treatments than controls, and it does report movement as a **rate
+  (m/h)**, so a hunting-pressure term *could* be expressed in this
+  model's currency. Not implemented, because the app has no data source
+  for local hunting pressure, and Hunsaker et al. 2025 found no
+  opening-weekend effect in Wisconsin, so a calendar proxy is not safe to
+  assume. Listed as a known gap below.
+- **Audit note (second pass):** an earlier README said this paper found
+  "low hunting pressure produced no biologically significant change in
+  *female* movement." The study animals were all male; that sentence was
+  a sex misattribution and has been removed.
+- **Correction note (first pass) — this is why the citation audit
+  mattered.** An earlier version of this code cited "Little et al. 2016,
+  *Effects of Weather on Habitat Selection and Movement of White-tailed
+  Deer*" in support of the falling-pressure bonus. **That title does not
+  exist.** The author/year are real but were attached to a fabricated
+  title, and the actual Little et al. 2016 is the hunting-intensity paper
+  above, which says nothing about barometric pressure. The false citation
+  has been removed.
 
-**Goethlich, J. 2019.** *Effects of Abiotic Factors on White-tailed Deer
-Activity in South Carolina.* M.S. thesis, Auburn University (chair:
-S.S. Ditchkoff). <https://etd.auburn.edu/handle/10415/7077>
+### Searched for and not found
 
-- **Study design:** **116** GPS-collared adult white-tailed deer,
-  2009–2018, South Carolina; activity classified from interfix step
-  length and turning angles; each abiotic factor modelled separately by
-  logistic regression.
-- **What this project takes from it:** the thesis abstract's conclusion,
-  verbatim: *"responses to abiotic factors were typically less pronounced
-  than circadian fluctuations in activity, and occurred most often during
-  non-peak times of activity."* The first half independently supports the
-  core design decision here — weather is capped below the daily-rhythm
-  terms. The second half implies weather should additionally be *damped*
-  inside crepuscular windows. **Webb et al. 2010 found the same thing
-  independently** (weather effects concentrated at 0100–0200 and 1300,
-  i.e. "hours of limited movements"), so this is two studies, not one.
-  Still not implemented: it would turn the additive model into an
-  interaction, complicating both the math and the stacked score chart,
-  and both studies agree the total weather effect is small anyway — which
-  the low weather ceilings already encode. Listed as a known gap below.
-- **Disagreement, reported honestly:** this thesis found that weather
-  condition, temperature, wind speed, **barometric pressure**, moon
-  phase and moon position all "affected activity in some seasons and
-  times of day." So neither pressure nor moon is universally inert —
-  another reason both are downweighted rather than removed.
-- **Not independent of Sullivan et al. 2016:** both studies come from the
-  Auburn Deer Lab and both used deer at Brosnan Forest, South Carolina.
-  Treat them as one study site, not two replications.
+The second research pass looked specifically for, and did not find:
+
+- Any study reporting weather effects on deer movement as a **rate**
+  (distance per time) with a usable sample size. The weather terms
+  therefore remain judgment calls.
+- Any newer or rate-based **solunar** test that could adjudicate between
+  Neary et al. 2025 and the two conflicting odds-based studies.
+- Any **meta-analysis or systematic review** of solunar-theory tests in
+  any species.
+- A peer-reviewed source for the "Saturday -22%, Sunday -34% daytime
+  movement" hunting-pressure figures that circulate in hunting media
+  (attributed to unpublished Auburn data). Not used.
 
 ## Known gaps and limitations
 
 - **Hunting pressure is not modeled.** Little et al. 2016 establishes it
-  matters; the app has no data source for it.
-- **Weather is not damped at dawn/dusk**, though Goethlich 2019 *and*
-  Webb et al. 2010 independently found weather effects concentrate in
-  non-peak activity hours. This is the best-supported unimplemented
-  refinement in the list.
+  matters and even reports a rate; the app has no data source for it,
+  and Hunsaker et al. 2025 argues against a naive calendar proxy.
+- **The dawn/dusk damping factor (0.5) is a judgment call.** Its
+  *existence* rests on two independent studies; its *size* does not. If
+  you read Goethlich and Webb as "weather does nothing at dawn and
+  dusk", `WEATHER_CREPUSCULAR_DAMPING` is the single constant to raise
+  toward 1.0.
+- **The rain penalty's direction is unsupported.** The best storm data
+  set available (Penn State) points both ways across its two years.
+  Suppression during rain is the conventional assumption and is kept,
+  at half the cold ceiling, but no located study establishes it.
 - **Solunar weighting rests on one study's units.** Neary et al. 2025 is
   the only solunar test reporting results as a movement rate, so it alone
   sets the Major/Minor weights. Swartout & Ditchkoff 2025 found a
@@ -451,8 +559,11 @@ to open in your browser.
   forecast with `past_days=7`) is flattened into an hour-by-hour timeline
   alongside the solunar events and rut phase, then every possible 6-hour
   window is scored as described above. The top 3 non-overlapping windows
-  are shown as text, and all candidates are plotted as a stacked bar
-  chart split into Rut Phase / Daily Activity / Weather.
+  are shown as text, and all candidates are plotted as a bar chart
+  stacked by Rut Phase / Daily Activity / Weather. Bonuses stack above
+  the zero line and penalties hang below it, so the bar's height is not
+  the score; a diamond on each bar marks the **net** total the ranking
+  actually uses, and the top 3 carry their net value as a label.
 
 The geocoding, timezone, and hourly weather lookups are all cached
 in-memory (`st.cache_data`, 1 hour TTL) so re-running a search for the

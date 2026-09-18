@@ -336,10 +336,11 @@ MINOR_YPH = 0.0
 # Caveat carried into the UI: these are *buck* movement rates, and the
 # phase offsets are relative to a peak breeding date the user supplies,
 # because peak rut date is regionally idiosyncratic rather than a clean
-# function of latitude (Pennsylvania peaks Nov 13-17 per the Penn State
-# Deer-Forest Study, southwest Wisconsin Oct 23-Nov 12 per Hunsaker et
-# al. 2025 despite being *further north*, and central Mississippi Dec 25
-# per Neary et al. 2025). See RUT_PEAK_DEFAULT_MONTH_DAY below.
+# function of latitude (Pennsylvania peaks mid-November per the PA Game
+# Commission's fetal-aging data, southwest Wisconsin Oct 23-Nov 12 per
+# Hunsaker et al. 2025 despite being *further north*, and central
+# Mississippi Dec 25 per Neary et al. 2025). See
+# RUT_PEAK_DEFAULT_MONTH_DAY below.
 RUT_PHASE_YPH = [
     ("Pre-rut", -35, -21, 4.0),
     ("Early rut", -21, -7, 104.0),
@@ -354,25 +355,37 @@ NO_RUT_YPH = -40.0
 
 # Default peak breeding date offered in the UI. November 15 is the
 # best-supported anchor for the East Coast band this app is tuned for:
-# the Penn State Deer-Forest Study puts Pennsylvania peak conception at
-# November 13-17 with half of does bred by November 13, and the
-# Pennsylvania Game Commission gives statewide peak breeding as November
-# 10-20. Users elsewhere should override it - local wildlife agency
+# the Pennsylvania Game Commission aged fetuses from 6,000+ road-killed
+# does (2000-2007) and reports peak breeding by adult does in
+# mid-November, and the Penn State Deer-Forest Study, working from the
+# same data set, reports half of does bred by November 13. (A more
+# precise "November 13-17" window circulates in the hunting press but
+# could not be traced to any Penn State primary source, so it is not
+# relied on.) Users elsewhere should override it - local wildlife agency
 # conception data beats any formula this app could apply.
 RUT_PEAK_DEFAULT_MONTH_DAY = (11, 15)
 
 # --- Weather terms -------------------------------------------------------
 #
 # None of these are calibrated to a measured movement-rate delta, because
-# no located study publishes weather effects as a movement-rate change.
-# They are bounded judgment calls, expressed in the same yph currency as
-# everything above so the bounds are legible.
+# no located study publishes weather effects as a movement-rate change
+# (a literature search through 2026 did not turn one up). They are
+# bounded judgment calls, expressed in the same yph currency as
+# everything above so the bounds are legible, and sized by evidential
+# standing: a term's ceiling scales with how often the fine-scale GPS
+# literature actually detected it.
 #
-# The bound used for the two best-supported weather terms is: at full
-# strength, contribute no more to a window than a single dawn or dusk
-# does. Dawn/dusk is +48 yph over roughly 2 of a window's 6 hours, i.e.
-# ~16 yph averaged across the window - so 16 yph is the ceiling for a
-# weather term that applies to *every* hour.
+# The bound for the best-supported weather term is: at full strength,
+# contribute no more to a window than a single dawn or dusk does.
+# Dawn/dusk is +48 yph over roughly 2 of a window's 6 hours, i.e. ~16 yph
+# averaged across the window - so 16 yph is the ceiling for a weather
+# term that applies to *every* hour.
+#
+# A second, independent sanity bound: Webb et al. 2010's weather
+# parameter estimates never exceeded ~29 m/h (~32 yph), and the authors
+# attribute even that partly to collar error. The largest combined
+# weather effect this block can produce (about +21 / -16 yph) sits
+# inside it.
 WEATHER_BOUND_YPH = CREPUSCULAR_YPH * 2 / WINDOW_HOURS
 
 # Cold. Temperature is the one weather variable with consistent support:
@@ -380,7 +393,7 @@ WEATHER_BOUND_YPH = CREPUSCULAR_YPH * 2 / WINDOW_HOURS
 # 80 models (10%), and temperature accounted for 5 of those 8 - rain,
 # relative humidity and wind speed took 1 each, which leaves barometric
 # pressure as the only one of their five weather variables with no linear
-# trend at all.
+# trend at all. Cold therefore gets the full bound.
 #
 # Scored as a departure below the location's own recent normal for that
 # hour of day rather than against a fixed degree threshold: a 38F morning
@@ -392,48 +405,62 @@ WEATHER_BOUND_YPH = CREPUSCULAR_YPH * 2 / WINDOW_HOURS
 COLD_ANOMALY_SCALE = 15.0
 COLD_MAX_YPH = WEATHER_BOUND_YPH
 
-# Precipitation. The clearest storm-related finding in the literature is
-# suppression *during* weather, not a spike before it: the Penn State
-# Deer-Forest Study's storm analysis (30 storm events, 52,279 GPS
-# locations) found collared deer moved less during storms. Scales
-# linearly with precipitation chance to the same bound.
-PRECIP_MAX_PENALTY_YPH = WEATHER_BOUND_YPH
-
-# Wind. Weak and inconsistent in the fine-scale GPS literature - Webb et
-# al. 2010 found no general wind relationship, only isolated
-# hour/season/sex effects. Held to half the bound the better-supported
-# terms get, and doesn't engage at all below the threshold.
+# Precipitation and wind. Held to HALF the bound, and at the same tier as
+# each other, because they have the same evidential standing: each was
+# significant in exactly 1 of Webb et al. 2010's 8 significant models.
+# An earlier version gave rain the full bound on the strength of the
+# Penn State Deer-Forest Study's storm analysis "finding deer moved less
+# during storms" - re-reading that source, its two years point in
+# opposite directions (2016: 102 yph outside storms vs 113 during; 2017:
+# 111 vs 98) and it concludes there was no significant effect, so it
+# supports neither the size nor the direction of a rain penalty. The
+# penalty's *direction* is a judgment call. Wind additionally doesn't
+# engage at all below the threshold.
+PRECIP_MAX_PENALTY_YPH = WEATHER_BOUND_YPH / 2
 WIND_PENALTY_THRESHOLD_MPH = 15.0
 WIND_PENALTY_FULL_MPH = 40.0
 WIND_MAX_PENALTY_YPH = WEATHER_BOUND_YPH / 2
 
-# Barometric pressure. Downweighted hard in this version. The falling-
-# pressure and "sweet spot band" bonuses are hunter folklore that the
-# GPS-collar literature does not support: the Penn State Deer-Forest
+# Weather damping inside dawn/dusk halos. Two studies independently found
+# that weather effects concentrate in NON-peak hours: Goethlich 2019
+# (116 collared deer, South Carolina) was "most likely to see a
+# significant relationship between abiotic factors and activity during
+# daytime and nighttime and least likely to see an effect in the morning
+# and evening", and Webb et al. 2010's weather effects surfaced at
+# 0100-0200 and 1300 - "hours of limited movements" - not at dawn or
+# dusk. Hunsaker et al. 2025 (188 bucks, Wisconsin) found no weather
+# effect at all on rut-period movement. So every weather term above is
+# multiplied by (1 - DAMPING x crepuscular coverage) hour by hour: an
+# hour fully inside a sunrise/sunset halo carries half weight, an hour
+# outside carries full weight. The size (0.5) is a judgment call - the
+# sources say "least likely" and "less pronounced", not "absent" - and
+# is the one constant to change if you read them more strongly.
+WEATHER_CREPUSCULAR_DAMPING = 0.5
+
+# Barometric pressure. Downweighted hard, and split by what the evidence
+# actually distinguishes: a CHANGE in pressure vs. a static LEVEL.
+#
+# Falling pressure has a sliver of support - Webb et al. 2010's separate
+# day-over-day analysis (weather *changes*, 10 of 80 models significant)
+# attributed 3 of those 10 to pressure, and Goethlich 2019 found pressure
+# affected activity in some seasons and times of day. Against that, Webb
+# et al.'s within-day analysis found pressure was the only one of five
+# weather variables with no linear trend, and the Penn State Deer-Forest
 # Study found "no statistical or biological significance" of oncoming
-# storms on collared-deer movement (their before/during/after/control
-# hourly movement rates all sit within roughly 94-113 yards per hour of
-# each other), and Webb et al. 2010 found pressure was the only one of
-# their five weather variables showing no general linear trend, with
-# effects surfacing only in scattered hour/season/sex combinations. The
-# 29.8-30.3 inHg band traces to a hunting-magazine rule of thumb, not a
-# peer-reviewed effect.
+# storms on collared deer (before/during/after/control rates all within
+# ~94-113 yph, with the two years disagreeing on direction). Small and
+# unproven rather than disproven, so the falling-pressure term is kept
+# at token weight: half the ~10 yph spread across the Penn State
+# conditions, which is itself an upper bound on an effect that study
+# could not detect. The pressure trend is also genuinely informative to
+# display.
 #
-# Not zero, though: Webb et al.'s day-over-day analysis did attribute 3
-# of 10 significant models to pressure, and Goethlich 2019 (116 collared
-# deer, South Carolina) found barometric pressure affected activity in
-# some seasons and times of day. Small-but-real is the fair reading.
-#
-# They are retained at token weight rather than deleted because the
-# effect is small-and-unproven rather than disproven, and because the
-# pressure trend is genuinely informative to display. They are pinned at
-# HALF the roughly +/-10 yph spread across the Penn State
-# before/during/after/control storm numbers - that spread is an upper
-# bound on an effect that study could not detect at all, so half of it is
-# a deliberately conservative reading. This also keeps the whole pressure
-# block (10 yph combined) below the cold term (16 yph), which matches
-# their relative evidential standing: temperature is the one weather
-# variable with repeated support, pressure has none.
+# The 29.8-30.3 inHg "sweet spot" band traces to a hunting-magazine rule
+# of thumb; no located study tests a static pressure level, and Webb et
+# al.'s within-day null is the closest thing to a test. Its weight is
+# therefore 0 - it stays in the code as a single constant to raise if
+# evidence ever appears, and the band is still reported in the window
+# text for hunters who track it.
 HPA_PER_INHG = 33.8639
 
 PRESSURE_DROP_LOOKBACK_HOURS = 24
@@ -444,7 +471,7 @@ PRESSURE_DROP_YPH = 5.0
 
 PRESSURE_BAND_LOW_IN = 29.8
 PRESSURE_BAND_HIGH_IN = 30.3
-PRESSURE_BAND_YPH = 5.0
+PRESSURE_BAND_YPH = 0.0
 
 # How many top-scoring, non-overlapping windows to search for; the UI
 # text list only shows the top 3 of these, but the score bar chart plots
@@ -645,6 +672,8 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
       'dt'            - the hour's start
       'weather'       - summarized hourly weather, or None
       'activity'      - solunar + crepuscular points for this hour
+      'crepuscular'   - fraction (0-1) of this hour inside a sunrise or
+                        sunset halo; damps the weather terms
       'rut'           - rut-phase points for this hour's date
       'rut_label'     - the phase name behind 'rut'
       'temp_anomaly'  - degrees F below this hour-of-day's recent normal
@@ -676,6 +705,7 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
         hour_end = hour_start + timedelta(hours=1)
 
         activity = 0.0
+        crepuscular = 0.0
         events = []
         for p in all_periods:
             # Both point events (Sunrise/Sunset) and windowed ones
@@ -688,7 +718,14 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
             ).total_seconds() / 3600
             if overlap_hours > 0:
                 activity += _KIND_YPH.get(p["kind"], 0.0) * POINTS_PER_YPH * overlap_hours
+                if p["kind"] in ("Sunrise", "Sunset"):
+                    crepuscular += overlap_hours
                 events.append(p)
+        # Fraction of this hour inside a dawn/dusk halo (the two halos
+        # can only overlap at extreme latitudes, hence the clamp). This
+        # is what the weather terms are damped by - see
+        # WEATHER_CREPUSCULAR_DAMPING.
+        crepuscular = min(1.0, crepuscular)
 
         rut_label, rut_yph = rut_phase(hour_start.date(), rut_peak_date)
 
@@ -702,6 +739,7 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
             "dt": hour_start,
             "weather": _summarize_weather([sample]) if sample else None,
             "activity": activity,
+            "crepuscular": crepuscular,
             "rut": rut_yph * POINTS_PER_YPH,
             "rut_label": rut_label,
             "temp_anomaly": temp_anomaly,
@@ -733,8 +771,9 @@ def _pressure_drop_in(samples_by_hour, hour_start):
 def _pressure_drop_yph(pressure_drop):
     """Tiered falling-pressure effect in yph for a pressure_drop (inHg,
     from _pressure_drop_in()) - 0.0 if None or below the minor
-    threshold. Shared by score_breakdown() and format_window() so the
-    displayed text always matches what was actually scored."""
+    threshold. Shared by _hour_weather_yph() (scored per hour) and
+    format_window() (which reports the window-start reading) so the
+    tiers behind the displayed label are the ones actually scored."""
     if pressure_drop is None:
         return 0.0
     if pressure_drop >= PRESSURE_DROP_THRESHOLD_IN:
@@ -749,6 +788,42 @@ CATEGORY_RUT = "Rut Phase"
 CATEGORY_WEATHER = "Weather"
 
 
+def _hour_weather_yph(hour):
+    """Net weather effect for one timeline hour, in yph, or None if the
+    hour has no weather data at all. Cold bonus and pressure bonuses,
+    minus the rain and wind penalties, then damped by how much of the
+    hour sits inside a dawn/dusk halo (see WEATHER_CREPUSCULAR_DAMPING).
+
+    Scored per hour rather than from window averages so that the
+    damping can be applied to exactly the hours it belongs to, and so
+    that the weather term is the same "mean over the window's hours"
+    shape as the activity and rut terms."""
+    weather = hour["weather"]
+    if not weather:
+        return None
+
+    yph = 0.0
+    if hour["temp_anomaly"] is not None:
+        yph += COLD_MAX_YPH * min(1.0, max(0.0, hour["temp_anomaly"] / COLD_ANOMALY_SCALE))
+
+    if weather["precip_max"] is not None:
+        yph -= PRECIP_MAX_PENALTY_YPH * weather["precip_max"] / 100.0
+
+    if weather["wind_avg"] is not None:
+        wind_span = WIND_PENALTY_FULL_MPH - WIND_PENALTY_THRESHOLD_MPH
+        yph -= WIND_MAX_PENALTY_YPH * min(
+            1.0, max(0.0, (weather["wind_avg"] - WIND_PENALTY_THRESHOLD_MPH) / wind_span)
+        )
+
+    pressure = weather["pressure_avg"]
+    if pressure is not None and PRESSURE_BAND_LOW_IN <= pressure <= PRESSURE_BAND_HIGH_IN:
+        yph += PRESSURE_BAND_YPH
+
+    yph += _pressure_drop_yph(hour["pressure_drop"])
+
+    return yph * (1.0 - WEATHER_CREPUSCULAR_DAMPING * hour["crepuscular"])
+
+
 def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
     """Same validity rules as score_window(), but returns the individual
     named terms that sum to the total score, so callers (the stacked
@@ -758,14 +833,16 @@ def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
     at all. Otherwise a dict:
       CATEGORY_ACTIVITY - dawn/dusk + solunar
       CATEGORY_RUT      - rut phase
-      CATEGORY_WEATHER  - cold-anomaly bonus + both pressure bonuses, net
-                          of the precipitation/wind penalty (can be
-                          negative)
+      CATEGORY_WEATHER  - cold-anomaly bonus + pressure bonuses, net of
+                          the precipitation/wind penalty, damped at
+                          dawn/dusk (can be negative)
       'total'           - sum of the three above
 
     Every term is the window's MEAN excess movement rate in yph times
     POINTS_PER_YPH - see the WEIGHTING METHOD note above for why the mean
     is what makes a two-hour effect and an all-day effect comparable.
+    The weather mean is taken over the hours that have weather data, so
+    a partially-covered window is not diluted by its blank hours.
     """
     hours = timeline[start_idx:start_idx + window_hours]
     if len(hours) < window_hours:
@@ -776,32 +853,8 @@ def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
     activity = sum(h["activity"] for h in hours) / len(hours)
     rut = sum(h["rut"] for h in hours) / len(hours)
 
-    anomalies = [h["temp_anomaly"] for h in hours if h["temp_anomaly"] is not None]
-    precips = [h["weather"]["precip_max"] for h in hours if h["weather"] and h["weather"]["precip_max"] is not None]
-    winds = [h["weather"]["wind_avg"] for h in hours if h["weather"] and h["weather"]["wind_avg"] is not None]
-    pressures = [h["weather"]["pressure_avg"] for h in hours if h["weather"] and h["weather"]["pressure_avg"] is not None]
-
-    weather_yph = 0.0
-    if anomalies:
-        avg_anomaly = sum(anomalies) / len(anomalies)
-        weather_yph += COLD_MAX_YPH * min(1.0, max(0.0, avg_anomaly / COLD_ANOMALY_SCALE))
-
-    if precips:
-        weather_yph -= PRECIP_MAX_PENALTY_YPH * (sum(precips) / len(precips)) / 100.0
-
-    if winds:
-        avg_wind = sum(winds) / len(winds)
-        wind_span = WIND_PENALTY_FULL_MPH - WIND_PENALTY_THRESHOLD_MPH
-        weather_yph -= WIND_MAX_PENALTY_YPH * min(
-            1.0, max(0.0, (avg_wind - WIND_PENALTY_THRESHOLD_MPH) / wind_span)
-        )
-
-    if pressures:
-        avg_pressure = sum(pressures) / len(pressures)
-        if PRESSURE_BAND_LOW_IN <= avg_pressure <= PRESSURE_BAND_HIGH_IN:
-            weather_yph += PRESSURE_BAND_YPH
-
-    weather_yph += _pressure_drop_yph(hours[0]["pressure_drop"])
+    hourly_weather = [w for w in (_hour_weather_yph(h) for h in hours) if w is not None]
+    weather_yph = sum(hourly_weather) / len(hourly_weather) if hourly_weather else 0.0
     weather = weather_yph * POINTS_PER_YPH
 
     return {
@@ -854,6 +907,24 @@ def find_candidate_windows(timeline, now_local, top_n=CANDIDATE_WINDOW_COUNT, wi
 
 def _label_for_date(d, today_date):
     return "Today" if d == today_date else f"{d.strftime('%a')} {d.month}/{d.day}"
+
+
+def _chart_theme():
+    """(surface, ink) colors for chart chrome, following whichever
+    Streamlit theme is active. The score chart draws its inter-segment
+    gaps and the ring around the net-score diamond in the *surface*
+    color so they vanish into the page in both light and dark mode;
+    hard-coding white would draw visible white borders on a dark
+    theme. Falls back to Streamlit's light-theme defaults on any
+    Streamlit version without `st.context.theme`."""
+    surface, ink = "#ffffff", "#31333f"
+    try:
+        theme = st.context.theme
+        surface = theme.backgroundColor or surface
+        ink = theme.textColor or ink
+    except Exception:
+        pass
+    return surface, ink
 
 
 def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
@@ -918,7 +989,9 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
             avg_pressure = sum(pressures) / len(pressures)
             pressure_bit = f"pressure {avg_pressure:.2f} inHg"
             if PRESSURE_BAND_LOW_IN <= avg_pressure <= PRESSURE_BAND_HIGH_IN:
-                pressure_bit += " (sweet spot)"
+                # Informational only: PRESSURE_BAND_YPH is 0, so this
+                # band does not move the score. See the constant.
+                pressure_bit += " (traditional 'sweet spot' band)"
             bits.append(pressure_bit)
 
     pressure_drop = hours[0]["pressure_drop"]
@@ -977,9 +1050,10 @@ with st.form("location_form"):
             "Rut phase is the strongest driver of fall deer movement in the "
             "research this app's scoring is calibrated against, but peak rut "
             "date is regionally specific and not a clean function of "
-            "latitude. The default (Nov 15) follows Penn State Deer-Forest "
-            "Study conception data for Pennsylvania. If your state wildlife "
-            "agency publishes conception dates for your area, use those."
+            "latitude. The default (Nov 15) follows the Pennsylvania Game "
+            "Commission's fetal-aging data (peak breeding mid-November, half "
+            "of does bred by Nov 13). If your state wildlife agency publishes "
+            "conception dates for your area, use those."
         ),
     )
     submitted = st.form_submit_button("Get feeding times", type="primary")
@@ -1037,18 +1111,31 @@ if submitted:
                         key=lambda pair: timeline[pair[1][1]]["dt"],
                     )
 
-                    # Each bar is stacked by score SOURCE (feeding window /
-                    # weather / pressure drop) rather than plotted as one
-                    # solid color, so it's visible at a glance where a
-                    # window's score is actually coming from. Colors are
-                    # fixed per category (never re-cycled) and match the
-                    # order they're stacked in.
+                    # Each bar is stacked by score SOURCE rather than plotted
+                    # as one solid color, so it's visible at a glance where a
+                    # window's score is actually coming from. Colors are fixed
+                    # per category (never re-cycled) and match the order
+                    # they're stacked in.
+                    #
+                    # Stacking is zero-based: positive terms pile up above the
+                    # axis and negative ones hang below it. That is the right
+                    # way to show *composition*, but it means the bar's visual
+                    # span is NOT the window's net score - a window with a big
+                    # rut penalty below the axis and a dawn bonus above it
+                    # looks taller than its total. So the net is drawn
+                    # explicitly on top of every bar: a thin connector from
+                    # zero to the true total, ending in a diamond, and a
+                    # direct value label on the top-3 ranked windows only (a
+                    # number on all 15 would be noise; the rest are in the
+                    # tooltip).
                     category_order = [CATEGORY_RUT, CATEGORY_ACTIVITY, CATEGORY_WEATHER]
                     category_colors = ["#1baf7a", "#2a78d6", "#eb6834"]
+                    surface, ink = _chart_theme()
 
                     window_labels = []
                     breakdown_rows = []
-                    for i, (_score, start_idx) in ranked_by_time:
+                    net_rows = []
+                    for i, (score, start_idx) in ranked_by_time:
                         label = (
                             f"#{i} {_label_for_date(timeline[start_idx]['dt'].date(), today_date)} "
                             f"{_format_time(timeline[start_idx]['dt'])}"
@@ -1061,13 +1148,32 @@ if submitted:
                                 "Category": category,
                                 "CategoryRank": rank,
                                 "Score": round(breakdown[category], 2),
+                                "Net": round(breakdown["total"], 2),
                             })
+                        net_rows.append({
+                            "Window": label,
+                            "Rank": i,
+                            "Net": round(breakdown["total"], 2),
+                            "Zero": 0.0,
+                            "NetLabel": f"{breakdown['total']:+.2f}" if i <= 3 else "",
+                        })
 
                     score_breakdown_df = pd.DataFrame(breakdown_rows)
-                    score_chart = alt.Chart(score_breakdown_df).mark_bar().encode(
-                        x=alt.X("Window:N", sort=window_labels, title=None,
-                                axis=alt.Axis(labelAngle=-40)),
-                        y=alt.Y("Score:Q", title="Score"),
+                    net_df = pd.DataFrame(net_rows)
+
+                    x_axis = alt.X(
+                        "Window:N", sort=window_labels, title=None,
+                        axis=alt.Axis(labelAngle=-40),
+                    )
+                    # A stroke in the surface color puts a 2px gap between
+                    # touching segments (and between the bar and the axis),
+                    # so neighbouring colors read as separate without a
+                    # drawn border.
+                    bars = alt.Chart(score_breakdown_df).mark_bar(
+                        stroke=surface, strokeWidth=2,
+                    ).encode(
+                        x=x_axis,
+                        y=alt.Y("Score:Q", title="Score (points)", stack="zero"),
                         color=alt.Color(
                             "Category:N",
                             scale=alt.Scale(domain=category_order, range=category_colors),
@@ -1077,18 +1183,65 @@ if submitted:
                         tooltip=[
                             alt.Tooltip("Window:N"),
                             alt.Tooltip("Category:N"),
-                            alt.Tooltip("Score:Q", format=".2f"),
+                            alt.Tooltip("Score:Q", format="+.2f", title="This term"),
+                            alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
                         ],
-                    ).properties(height=320)
+                    )
+                    zero_line = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+                        color=ink, opacity=0.45, strokeWidth=1,
+                    ).encode(y="y:Q")
+                    net_connector = alt.Chart(net_df).mark_rule(
+                        color=ink, opacity=0.75, strokeWidth=1.5,
+                    ).encode(x=x_axis, y="Zero:Q", y2="Net:Q")
+                    net_marker = alt.Chart(net_df).mark_point(
+                        shape="diamond", size=120, filled=True,
+                        color=ink, stroke=surface, strokeWidth=2,
+                    ).encode(
+                        x=x_axis,
+                        y=alt.Y("Net:Q"),
+                        tooltip=[
+                            alt.Tooltip("Window:N"),
+                            alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
+                            alt.Tooltip("Rank:Q", title="Rank"),
+                        ],
+                    )
+                    def _net_label_layers(dy, keep):
+                        """Net-score label above (dy<0) or below (dy>0) the
+                        diamond, for rows matching `keep`. Drawn twice: a
+                        fat surface-colored copy first as a halo, then the
+                        ink copy, so the label stays legible when it lands
+                        on a colored segment."""
+                        base = alt.Chart(net_df).encode(
+                            x=x_axis, y="Net:Q", text="NetLabel:N",
+                        ).transform_filter(keep)
+                        halo = base.mark_text(
+                            fontWeight="bold", fontSize=12, dy=dy,
+                            color=surface, stroke=surface, strokeWidth=4, opacity=0.9,
+                        )
+                        text = base.mark_text(
+                            fontWeight="bold", fontSize=12, dy=dy, color=ink,
+                        )
+                        return [halo, text]
+
+                    net_labels = (
+                        _net_label_layers(-13, alt.datum.Net >= 0)
+                        + _net_label_layers(15, alt.datum.Net < 0)
+                    )
+                    score_chart = alt.layer(
+                        bars, zero_line, net_connector, net_marker, *net_labels,
+                    ).properties(height=340)
                     st.altair_chart(score_chart, width="stretch")
                     st.caption(
                         "Each bar is stacked by where its score comes from: **Rut "
                         "Phase** (the largest measured effect, so it sets the level "
                         "for a whole day rather than separating windows within it), "
                         "**Daily Activity** (dawn/dusk plus solunar major/minor), and "
-                        "the combined **Weather** effect (cold-anomaly and pressure "
-                        "bonuses, net of the rain/wind penalty - can pull a bar down). "
-                        "Rut Phase goes negative outside the rut."
+                        "the combined **Weather** effect. Bonuses stack above the "
+                        "zero line and penalties hang below it, so the bar's height "
+                        "alone is not the score - the **diamond is the net score** "
+                        "(bonuses minus penalties), and the top 3 windows carry their "
+                        "net value as a label. Hover any segment or diamond for exact "
+                        "numbers."
                     )
 
                     st.subheader(":chart_with_upwards_trend: Forecast Overview")
@@ -1201,7 +1354,10 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     st.latex(
         r"\text{score} = \underbrace{\text{activity}}_{\text{dawn/dusk} + \text{solunar}}"
         r" + \underbrace{\text{rut}}_{\text{per day}}"
-        r" + \underbrace{\text{cold} + \text{pressure} - \text{penalty}}_{\text{weather}}"
+        r" + \underbrace{(\text{cold} + \text{pressure} - \text{penalty}) \cdot d}_{\text{weather}}"
+    )
+    st.markdown(
+        "$d$ is the dawn/dusk damping factor applied to every weather term - see step 6."
     )
 
     st.markdown("**1. Daily activity** - every hour $h$ in the window contributes:")
@@ -1227,11 +1383,12 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         )
         + "\n| Outside rut | beyond +/-35 |\n\n"
         "**Peak rut date is regionally specific and not a clean function of latitude**, "
-        "which is why this app asks rather than computes it: Pennsylvania peaks Nov 13-17 "
-        "(Penn State Deer-Forest Study), southwest Wisconsin Oct 23-Nov 12 (Hunsaker et "
-        "al. 2025) *despite being further north*, and central Mississippi Dec 25 (Neary "
-        "et al. 2025). If your state wildlife agency publishes conception data, use it. "
-        "Note also that these are **buck** movement rates."
+        "which is why this app asks rather than computes it: Pennsylvania peaks "
+        "mid-November with half of does bred by Nov 13 (PA Game Commission fetal "
+        "aging; Penn State Deer-Forest Study), southwest Wisconsin Oct 23-Nov 12 "
+        "(Hunsaker et al. 2025) *despite being further north*, and central Mississippi "
+        "Dec 25 (Neary et al. 2025). If your state wildlife agency publishes conception "
+        "data, use it. Note also that these are **buck** movement rates."
     )
 
     st.markdown(
@@ -1241,15 +1398,16 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "from what they're acclimated to):"
     )
     st.latex(
-        r"\text{cold} = k \cdot Y_{\text{cold}} \cdot "
-        r"\text{clamp}\big(\tfrac{\overline{\Delta T}}{S},\ 0,\ 1\big)"
+        r"\text{cold}_h = Y_{\text{cold}} \cdot "
+        r"\text{clamp}\big(\tfrac{\Delta T_h}{S},\ 0,\ 1\big)"
     )
     st.markdown(
-        f"$\\overline{{\\Delta T}}$ is how many °F below normal the window runs, where "
-        f"\"normal\" is the mean of the last {PAST_DAYS_LOOKBACK} days of observations at "
-        f"the same hour of day; $S = {COLD_ANOMALY_SCALE:.0f}$°F and "
+        f"$\\Delta T$ is how many °F below normal an hour runs, where \"normal\" is "
+        f"the mean of the last {PAST_DAYS_LOOKBACK} days of observations at the same hour "
+        f"of day; $S = {COLD_ANOMALY_SCALE:.0f}$°F and "
         f"$Y_{{\\text{{cold}}}} = {COLD_MAX_YPH:.0f}$ yph (max "
-        f"{COLD_MAX_YPH * POINTS_PER_YPH:.2f} points).\n\n"
+        f"{COLD_MAX_YPH * POINTS_PER_YPH:.2f} points). Like every weather term it is "
+        f"evaluated hour by hour and averaged over the window.\n\n"
         f"Temperature is the one weather variable with consistent support - Webb et al. "
         f"(2010) found weather mattered in only 8 of 80 models (10%), and temperature "
         f"accounted for 5 of those 8, more than any other variable. No study publishes a "
@@ -1260,39 +1418,44 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
 
     st.markdown("**4. Rain/wind penalty** - subtracted:")
     st.latex(
-        r"\text{penalty} = k\Big(Y_{\text{rain}} \tfrac{\bar p}{100}"
-        r" + Y_{\text{wind}}\,\text{clamp}\big(\tfrac{\bar v - v_0}{v_1 - v_0},\ 0,\ 1\big)\Big)"
+        r"\text{penalty}_h = Y_{\text{rain}} \tfrac{p_h}{100}"
+        r" + Y_{\text{wind}}\,\text{clamp}\big(\tfrac{v_h - v_0}{v_1 - v_0},\ 0,\ 1\big)"
     )
     st.markdown(
-        f"$\\bar p$ is average precipitation chance (%) and $\\bar v$ average wind speed "
-        f"(mph); $Y_{{\\text{{rain}}}} = {PRECIP_MAX_PENALTY_YPH:.0f}$ yph, "
+        f"$p_h$ is the hour's precipitation chance (%) and $v_h$ its wind speed (mph); "
+        f"$Y_{{\\text{{rain}}}} = {PRECIP_MAX_PENALTY_YPH:.0f}$ yph, "
         f"$Y_{{\\text{{wind}}}} = {WIND_MAX_PENALTY_YPH:.0f}$ yph, "
         f"$v_0 = {WIND_PENALTY_THRESHOLD_MPH:.0f}$, $v_1 = {WIND_PENALTY_FULL_MPH:.0f}$ mph.\n\n"
-        f"The clearest storm finding in the literature is suppression *during* weather "
-        f"rather than a spike before it - the Penn State Deer-Forest Study's storm "
-        f"analysis (30 storms, 52,279 GPS locations) found deer moved less during storms. "
-        f"Wind is weak and inconsistent in the fine-scale GPS literature, so it gets half "
-        f"the ceiling rain does and doesn't engage at all below "
+        f"Rain and wind sit at the same tier - half the cold ceiling - because they have "
+        f"the same evidential standing: each was significant in exactly 1 of Webb et al. "
+        f"(2010)'s 8 significant weather models. An earlier version gave rain the full "
+        f"ceiling on the strength of the Penn State Deer-Forest Study's storm analysis "
+        f"(30 storms, 52,279 GPS locations) \"finding deer moved less during storms\"; on "
+        f"re-reading, its two years point in opposite directions (2016: 102 yph outside "
+        f"storms vs 113 during; 2017: 111 vs 98) and it concludes there was no significant "
+        f"effect, so it supports neither the size nor the direction of a rain penalty. "
+        f"The direction is a judgment call. Wind doesn't engage at all below "
         f"{WIND_PENALTY_THRESHOLD_MPH:.0f} mph."
     )
 
     st.markdown(
-        "**5. Pressure** - deliberately downweighted to near-token size in this version. "
-        "A flat bonus when the window's average barometric pressure sits in the "
-        "traditional band, plus a two-tier bonus for a falling trend:"
+        "**5. Pressure** - deliberately downweighted to near-token size, and split by "
+        "what the evidence can actually distinguish: a *change* in pressure (a two-tier "
+        "bonus for a falling 24-hour trend) versus a static *level* (the traditional "
+        "\"sweet spot\" band, which now carries **zero** weight):"
     )
     st.latex(
-        r"\text{pressure} = k\Big(\underbrace{Y_{\text{band}}\,"
-        r"\mathbb{1}[P_{\text{low}} \le \bar P \le P_{\text{high}}]}_{\text{band}}"
+        r"\text{pressure}_h = \underbrace{Y_{\text{band}}\,"
+        r"\mathbb{1}[P_{\text{low}} \le P_h \le P_{\text{high}}]}_{\text{band}}"
         r" + \underbrace{\begin{cases}"
-        r"Y_{\text{drop}} & \Delta P \ge \Delta P_{\text{min}} \\"
-        r"Y_{\text{drop,minor}} & \Delta P_{\text{minor}} \le \Delta P < \Delta P_{\text{min}} \\"
+        r"Y_{\text{drop}} & \Delta P_h \ge \Delta P_{\text{min}} \\"
+        r"Y_{\text{drop,minor}} & \Delta P_{\text{minor}} \le \Delta P_h < \Delta P_{\text{min}} \\"
         r"0 & \text{otherwise}"
-        r"\end{cases}}_{\text{falling}}\Big)"
+        r"\end{cases}}_{\text{falling}}"
     )
     st.markdown(
-        f"$\\bar P$ is average sea-level pressure (inHg) and $\\Delta P$ the fall over the "
-        f"{PRESSURE_DROP_LOOKBACK_HOURS} hours before the window starts; "
+        f"$P_h$ is the hour's sea-level pressure (inHg) and $\\Delta P_h$ the fall over "
+        f"the {PRESSURE_DROP_LOOKBACK_HOURS} hours before it; "
         f"$P_{{\\text{{low}}}} = {PRESSURE_BAND_LOW_IN}$, "
         f"$P_{{\\text{{high}}}} = {PRESSURE_BAND_HIGH_IN}$, "
         f"$Y_{{\\text{{band}}}} = {PRESSURE_BAND_YPH:.0f}$ yph, "
@@ -1301,21 +1464,51 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         f"$\\Delta P_{{\\text{{min}}}} = {PRESSURE_DROP_THRESHOLD_IN}$, "
         f"$Y_{{\\text{{drop}}}} = {PRESSURE_DROP_YPH:.0f}$ yph "
         f"(so at most {(PRESSURE_BAND_YPH + PRESSURE_DROP_YPH) * POINTS_PER_YPH:.2f} "
-        f"points combined).\n\n"
-        "**Why so small?** Falling-pressure and \"sweet spot\" rules are hunting folklore "
-        "the GPS-collar literature does not support. The Penn State Deer-Forest Study "
-        "found *no statistical or biological significance* of oncoming storms on collared "
-        "deer - their before / during / after / control hourly movement rates all sit "
-        "within roughly 94-113 yph of each other. Webb et al. (2010) found pressure "
-        "effects only in scattered, inconsistent hour/season/sex combinations with no "
-        "general pattern. The 29.8-30.3 inHg band traces to a hunting-magazine rule of "
-        "thumb, not a peer-reviewed result.\n\n"
-        "They're kept at token weight rather than deleted because the effect is "
-        "small-and-unproven rather than disproven, and the trend is informative to see. "
-        "The size is half the roughly +/-10 yph spread across the Penn State "
-        "before/during/after/control numbers - that spread is an upper bound on an effect "
-        "that study couldn't detect at all, so half of it is a deliberately conservative "
-        "reading, and it keeps the whole pressure block below the cold term."
+        f"points).\n\n"
+        "**Why so small?** The Penn State Deer-Forest Study found *no statistical or "
+        "biological significance* of oncoming storms on collared deer - their before / "
+        "during / after / control hourly movement rates all sit within roughly 94-113 yph "
+        "of each other, and the two study years disagree on direction. Webb et al. (2010) "
+        "found pressure was the only one of five weather variables with no within-day "
+        "linear trend at all. Falling pressure keeps a token weight because a separate "
+        "Webb et al. analysis of day-over-day weather *changes* attributed 3 of 10 "
+        "significant models to pressure, and Goethlich (2019) found pressure affected "
+        "activity in some seasons and times of day - small-and-unproven rather than "
+        "disproven. Its size is half the roughly +/-10 yph spread across the Penn State "
+        "conditions, which is itself an upper bound on an effect that study could not "
+        "detect.\n\n"
+        "The 29.8-30.3 inHg \"sweet spot\" band, by contrast, traces to a hunting-magazine "
+        "rule of thumb, and no located study tests a static pressure *level* at all. It "
+        "is still reported in the window text for hunters who track it, but it no longer "
+        "moves the score."
+    )
+
+    st.markdown(
+        "**6. Dawn/dusk damping** - every weather term above is evaluated per hour and "
+        "then scaled down inside the sunrise/sunset halos:"
+    )
+    st.latex(
+        r"\text{weather} = \frac{k}{H}\sum_h (\text{cold}_h + \text{pressure}_h - "
+        r"\text{penalty}_h)\,(1 - D \cdot c_h)"
+    )
+    st.markdown(
+        f"$c_h$ is the fraction of hour $h$ inside a dawn or dusk halo (0-1) and "
+        f"$D = {WEATHER_CREPUSCULAR_DAMPING}$, so an hour fully at dawn carries half the "
+        f"weather weight of a midday hour.\n\n"
+        "Two studies independently found that weather effects concentrate in *non-peak* "
+        "hours: Goethlich (2019; 116 collared deer, South Carolina) was \"most likely to "
+        "see a significant relationship between abiotic factors and activity during "
+        "daytime and nighttime and least likely to see an effect in the morning and "
+        "evening\", and Webb et al. (2010)'s weather effects surfaced at 0100-0200 and "
+        "1300 - \"hours of limited movements\" - not at dawn or dusk. Hunsaker et al. "
+        "(2025; 188 bucks, Wisconsin) found no weather effect at all on rut-period "
+        "movement. The size of $D$ is a judgment call: the sources say \"least likely\" "
+        "and \"less pronounced\", not \"absent\".\n\n"
+        "A final sanity check on the whole weather block: Webb et al. (2010)'s weather "
+        "parameter estimates never exceeded ~29 m/h (~32 yph), and the authors attribute "
+        "even that partly to collar error. The most this block can move a window is "
+        f"about +{COLD_MAX_YPH + PRESSURE_BAND_YPH + PRESSURE_DROP_YPH:.0f} / "
+        f"-{PRECIP_MAX_PENALTY_YPH + WIND_MAX_PENALTY_YPH:.0f} yph, inside that bound."
     )
 
     st.markdown("### Window search and chart colors")
@@ -1329,9 +1522,11 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         f"|---|---|---|\n"
         f"| **{CATEGORY_RUT}** | 2 | Yes - outside the rut it's a penalty |\n"
         f"| **{CATEGORY_ACTIVITY}** | 1 (dawn/dusk + solunar) | No |\n"
-        f"| **{CATEGORY_WEATHER}** | 3 + 5 - 4 | Yes - a wet, windy window pulls its bar "
-        f"below zero |\n\n"
-        f"The three stacked segments always sum to the window's total score."
+        f"| **{CATEGORY_WEATHER}** | (3 + 5 - 4) x 6 | Yes - a wet, windy window pulls its "
+        f"bar below zero |\n\n"
+        f"Bonuses stack above the zero line and penalties hang below it, so a bar's "
+        f"height is not its score; the diamond on each bar marks the net total (the three "
+        f"segments summed), which is what the ranking uses."
     )
 
     st.markdown("### Sources")
@@ -1359,14 +1554,17 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "- **Penn State Deer-Forest Study.** *Spidey Sense* (deer.psu.edu) — 30 storm "
         "events, 52,279 GPS locations, 4-8 collared does, 2016-17; source for the null "
         "storm/pressure result (\"no statistical or biological significance\") and the "
-        "~94-113 yph before/during/after/control spread the pressure terms are pinned "
-        "under. (Research-project blog, not peer-reviewed.)\n"
+        "~94-113 yph before/during/after/control spread the falling-pressure term is "
+        "pinned under. Its two years disagree on whether deer moved more or less during "
+        "storms, which is why it no longer backs the rain penalty. (Research-project blog, "
+        "not peer-reviewed.)\n"
         "- **Pennsylvania Game Commission.** *When is the rut?* — fetal measurements from "
         "6,000+ road-killed does, 2000-2007; peak breeding by adult does in "
-        "**mid-November**, which is where the Nov 15 default comes from.\n"
+        "**mid-November**, which is where the Nov 15 default comes from. The Penn State "
+        "Deer-Forest Study, from the same data, puts half of does bred by Nov 13.\n"
         "- **Sullivan, J.D., S.S. Ditchkoff, B.A. Collier, C.R. Ruth, and J.B. Raglin. "
         "2016.** *Movement with the moon: white-tailed deer activity and solunar events.* "
-        "Journal of the SEAFWA 3:225-232. — 38 bucks, South Carolina. Near a new/full "
+        "Journal of the SEAFWA 3:225-232. — 38 bucks, Brosnan Forest, South Carolina. Near a new/full "
         "moon, **minor**-period activity rose (0.384->0.564 at moonrise) while "
         "**major**-period activity *fell* (0.540->0.413 overhead). Concluded solunar "
         "charts \"may be misleading\".\n"
@@ -1380,14 +1578,18 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "Breeding Season and Movement Ecology of Male White-Tailed Deer in Southwest "
         "Wisconsin.* Ecology and Evolution 15(7):e71589. — 188 collared males; source for "
         "the Oct 23-Nov 12 Wisconsin peak-breeding window used to show that rut timing "
-        "isn't a simple latitude function.\n"
+        "isn't a simple latitude function, and for the null result that weather, hunting "
+        "season and opening firearm weekend had no significant effect on rut-period "
+        "movement.\n"
         "- **Little, A.R., S.L. Webb, S. Demarais, K.L. Gee, S.K. Riffell, and J.A. "
         "Gaskamp. 2016.** *Hunting intensity alters movement behaviour of white-tailed "
-        "deer.* Basic and Applied Ecology 17:360-369. — hunting pressure as a real "
-        "movement driver; a known gap this model does not attempt (see README).\n"
+        "deer.* Basic and Applied Ecology 17:360-369. — 37 adult bucks, Oklahoma; "
+        "hunting pressure as a real movement driver; a known gap this model does not "
+        "attempt (see README).\n"
         "- **Goethlich, J. 2019.** *Effects of Abiotic Factors on White-tailed Deer "
         "Activity in South Carolina.* M.S. thesis, Auburn University. — 116 collared "
         "deer, 2009-2018: responses to abiotic factors were *\"typically less pronounced "
         "than circadian fluctuations in activity, and occurred most often during non-peak "
-        "times of activity.\"* Considered but not implemented (see README)."
+        "times of activity.\"* The basis, with Webb et al. 2010, for damping the weather "
+        "terms at dawn and dusk (step 6)."
     )
