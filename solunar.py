@@ -345,10 +345,16 @@ RUT_PHASE_YPH = [
     ("Late rut", 7, 21, 78.0),
     ("Post-rut", 21, 35, 9.0),
 ]
-# Neary et al. 2025's "No Rut" series: -40 yph against the season mean.
-# Their data covers September-February, so applying this outside that
-# window is an extrapolation.
-NO_RUT_YPH = -40.0
+# Neary et al. 2025's "No Rut" series measured -40 yph against the season
+# mean - but that mean is pulled up by the rut days themselves, so scoring
+# every non-rut day against it makes ordinary daytime movement look like a
+# penalty. This app ranks windows within a several-day forecast, not
+# against the whole season, so "no measured rut elevation" is scored as
+# neutral (0) rather than as a deficit: nothing is subtracted for a day
+# simply because it falls outside the rut bands above. The -40 figure is
+# still true of the underlying data and is cited in the docs, it's just
+# not what gets scored.
+NO_RUT_YPH = 0.0
 
 # Default peak breeding date offered in the UI. November 15 is the
 # best-supported anchor for the East Coast band this app is tuned for:
@@ -1117,7 +1123,7 @@ if submitted:
                     # axis and negative ones hang below it. That is the right
                     # way to show *composition*, but it means the bar's visual
                     # span is NOT the window's net score - a window with a big
-                    # rut penalty below the axis and a dawn bonus above it
+                    # weather penalty below the axis and a dawn bonus above it
                     # looks taller than its total. So the net is drawn
                     # explicitly on top of every bar: a thin connector from
                     # zero to the true total, ending in a diamond, and a
@@ -1334,11 +1340,18 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         f"**{MAJOR_YPH * POINTS_PER_YPH:.2f}** |\n"
         f"| **Solunar Minor** (moonrise/moonset) | **-0.1 yph** | "
         f"**{MINOR_YPH * POINTS_PER_YPH:.2f}** |\n"
-        f"| Outside the rut | -40 yph | {NO_RUT_YPH * POINTS_PER_YPH:.2f} |\n\n"
+        f"| Outside the rut | -40 yph measured, scored as {NO_RUT_YPH * POINTS_PER_YPH:.2f} | "
+        f"{NO_RUT_YPH * POINTS_PER_YPH:.2f} |\n\n"
         "The rightmost column is the effect at its own rate; what a term actually "
         "contributes to a window also depends on how many of the window's hours it "
         "covers (a dawn band covers ~2 of 6, so it adds ~"
         f"{CREPUSCULAR_YPH * 2 / WINDOW_HOURS * POINTS_PER_YPH:.2f}).\n\n"
+        "**Outside the rut is floored at zero, not scored at its measured -40 yph.** "
+        "That -40 is a delta against a season mean that the rut days themselves pull "
+        "up, so scoring every non-rut day against it would subtract points from most "
+        "of the season just for not being the rut. This app ranks windows within a "
+        "short forecast rather than against the whole season, so a day with no "
+        "measured rut elevation is neutral, not a deficit.\n\n"
         "That ordering is the single most important thing on this page: **rut phase and "
         "dawn/dusk dominate; the solunar periods this app is named after are, measured "
         "against a buck's own usual movement at the same time of day, indistinguishable "
@@ -1377,7 +1390,7 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
             f"| {label} | {start:+d} to {end:+d} |"
             for label, start, end, _ in RUT_PHASE_YPH
         )
-        + "\n| Outside rut | beyond +/-35 |\n\n"
+        + "\n| Outside rut | beyond +/-35 (scored as 0, not a penalty) |\n\n"
         "**Peak rut date is regionally specific and not a clean function of latitude**, "
         "which is why this app asks rather than computes it: Pennsylvania peaks "
         "mid-November with half of does bred by Nov 13 (PA Game Commission fetal "
@@ -1516,7 +1529,7 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "window shifted by an hour.\n\n"
         f"| Chart color | Terms it contains | Can it be negative? |\n"
         f"|---|---|---|\n"
-        f"| **{CATEGORY_RUT}** | 2 | Yes - outside the rut it's a penalty |\n"
+        f"| **{CATEGORY_RUT}** | 2 | No - floored at zero outside the rut |\n"
         f"| **{CATEGORY_ACTIVITY}** | 1 (dawn/dusk + solunar) | No |\n"
         f"| **{CATEGORY_WEATHER}** | (3 + 5 - 4) x 6 | Yes - a wet, windy window pulls its "
         f"bar below zero |\n\n"

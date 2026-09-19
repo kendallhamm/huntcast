@@ -80,10 +80,18 @@ yph season mean**:
 | Pre-rut | +4 yph | +0.08 |
 | **Solunar Major** (moon overhead/underfoot) | **+3 yph** | **+0.06** |
 | **Solunar Minor** (moonrise/moonset) | **-0.1 yph** | **0.00** |
-| Outside the rut | -40 yph | -0.85 |
+| Outside the rut | -40 yph measured, scored as 0 | 0.00 |
 
 A term's actual contribution to a window also depends on how many of the
 window's hours it covers - a dawn band covers ~2 of 6, so it adds ~0.34.
+
+**Outside the rut is floored at zero rather than scored at its measured
+-40 yph.** That figure is a delta against a season mean that the rut days
+themselves pull up, so applying it to every non-rut day would subtract
+points from most of the season for the simple fact of not being the rut.
+This app ranks hunting windows within a several-day forecast, not against
+the whole season, so a day with no measured rut elevation is scored as
+neutral rather than as a deficit.
 
 ### The six terms
 
@@ -492,9 +500,10 @@ The second research pass looked specifically for, and did not find:
   daytime only.
 - **Rut phase barely discriminates *within* a short forecast.** It's a
   per-day level, so across a 7-day search it mostly shifts every window
-  up or down together. It earns its place by making the absolute score
-  meaningful ("is this week worth hunting at all?") and by discriminating
-  across longer searches and phase boundaries.
+  up or down together rather than separating windows within a day. It
+  earns its place by discriminating across longer searches and phase
+  boundaries, and by staying non-negative outside the rut (see below) so
+  it never drags an otherwise-good window down just for the calendar.
 - **The cold anomaly has a seasonal-drift artifact.** In autumn, a
   trailing 7-day baseline systematically makes the forecast look cold,
   because temperatures are genuinely declining. This inflates the cold
