@@ -11,8 +11,7 @@ via the `ephem` astronomy library - no external solunar service involved.
 On top of the per-day feeding times, rut phase and the hourly forecast
 (temperature, precipitation chance, wind, barometric pressure) are
 cross-referenced against the solunar events to rank the best 6-hour
-"hunting windows" - see the scoring section below, which is pure
-arithmetic with no LLM anywhere in it.
+"hunting windows" - see the scoring section below for the formula.
 
 Scoring weights are not hand-tuned. Every activity term is expressed in
 the unit the underlying GPS-collar research measured it in (yards per
@@ -236,10 +235,8 @@ _KIND_EMOJI = {"Major": ":full_moon:", "Minor": ":waxing_gibbous_moon:", "Sunris
 #
 # Cross-references the solunar events above against rut phase and an
 # hourly weather forecast to surface the best ~6-hour "hunting window"
-# per search. There is deliberately no LLM call anywhere in this section:
-# window selection and ranking are pure arithmetic, so behavior is fully
-# reproducible and there's no API cost or key exposure risk from other
-# people's usage.
+# per search. Window selection and ranking are deterministic arithmetic,
+# so the same inputs always produce the same ranking.
 #
 # WEIGHTING METHOD. Every term below is expressed in the unit the
 # underlying research measured - yards per hour (yph) of excess daytime
@@ -929,8 +926,7 @@ def _chart_theme():
 
 def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
     """One line describing timeline[start_idx:start_idx+window_hours],
-    for direct display in the UI - no LLM narration, just the scored
-    facts."""
+    for direct display in the UI."""
     hours = timeline[start_idx:start_idx + window_hours]
     start_dt = hours[0]["dt"]
     end_dt = hours[-1]["dt"] + timedelta(hours=1)
@@ -1297,8 +1293,8 @@ st.caption(
 
 with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     st.markdown(
-        f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window, scored by pure "
-        "arithmetic - no AI involved anywhere."
+        f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window, scored by the "
+        "formula below."
     )
 
     st.markdown("### Where the weights come from")

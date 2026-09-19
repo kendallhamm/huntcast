@@ -37,10 +37,7 @@ call for the math itself.
 
 On top of the daily feeding times, the app cross-references rut phase and
 an hourly weather forecast to rank the best ~6-hour "hunting windows"
-over the search period. This ranking is pure arithmetic - **no LLM is
-used anywhere in this app**, on purpose, since it's public-facing and
-window selection needs to be reproducible with no API cost or key
-exposure for other people's usage.
+over the search period, using the scoring formula described below.
 
 ## How the scoring works
 
