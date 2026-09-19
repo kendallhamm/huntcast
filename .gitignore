@@ -81,3 +81,6 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Local Claude Code instructions (not for the repo)
+CLAUDE.md

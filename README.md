@@ -1,9 +1,9 @@
-# Solunar Feeding Times
+# Huntcaster
 
-A standalone Streamlit app that forecasts solunar "feeding times" -
-major/minor hunting & fishing activity windows - for any postal/zip
-code worldwide, and ranks the best 6-hour hunting windows using a
-scoring model calibrated against published GPS-collar research.
+A standalone Streamlit app that ranks the best 6-hour deer hunting
+windows for any postal/zip code worldwide, using a scoring model
+calibrated against published GPS-collar research - combining rut phase,
+weather, and solunar major/minor "feeding time" windows.
 
 Fully self-contained: no `.env`, no API keys, no dependency on any other
 project. Geocoding and timezone resolution use free, keyless public
@@ -546,7 +546,7 @@ to open in your browser.
 4. **Peak breeding (rut) date** - defaults to November 15. Override it
    with your state wildlife agency's conception data if they publish it;
    local data beats any formula this app could apply.
-5. Click **Get feeding times** to fetch the location, resolve its local
+5. Click **Get hunting forecast** to fetch the location, resolve its local
    timezone, and compute/display the forecast, one card per day.
 
 ## How it works

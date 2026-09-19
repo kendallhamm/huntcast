@@ -1,6 +1,7 @@
 """
-Standalone Streamlit app: solunar "feeding times" forecast (hunting/fishing
-major/minor activity windows) for any postal/zip code worldwide.
+Standalone Streamlit app: ranks the best deer hunting windows for any
+postal/zip code worldwide, by combining rut phase, weather, and solunar
+major/minor feeding-time windows.
 
 Fully self-contained - no dependency on, or import of, anything outside
 this folder. No API keys, no .env, no secrets: geocoding is a public
@@ -32,7 +33,6 @@ import ephem
 import pandas as pd
 import requests
 import streamlit as st
-import streamlit.components.v1 as components
 
 # ---------------------------------------------------------------------------
 # Geocoding (Zippopotam.us - free, no key)
@@ -1062,7 +1062,6 @@ if st.checkbox("I don't know my peak rut date - help me find it by state"):
     rut_help = RUT_DATE_HELP_STATES[rut_help_state]
     st.caption(rut_help["caption"])
     st.markdown(f"[Open the full PDF]({rut_help['url']})")
-    components.iframe(rut_help["url"], height=600, scrolling=True)
 
 with st.form("location_form"):
     col1, col2 = st.columns([2, 1])
@@ -1087,7 +1086,7 @@ with st.form("location_form"):
             "'help me find it by state' box above."
         ),
     )
-    submitted = st.form_submit_button("Get feeding times", type="primary")
+    submitted = st.form_submit_button("Get hunting forecast", type="primary")
 
 if submitted:
     if not postcode.strip():
