@@ -797,6 +797,102 @@ def _ny_region_entry(region):
     }
 
 
+# --- Texas ecoregion peak breeding dates ---------------------------------
+#
+# Texas Parks and Wildlife Department, "The Rut in White-tailed Deer."
+# <https://tpwd.texas.gov/huntwild/hunt/planning/rut_whitetailed_deer/>
+#
+# Study design: TPWD examined 2,436 does across 16 study areas covering
+# the state's ecoregions over three years, aging fetuses by length to
+# back-calculate conception dates. TPWD publishes a peak breeding date
+# per study area, which is why this lookup has 16 entries - they are the
+# study areas, not administrative units.
+#
+# Texas is by ecoregion rather than county for the same reason New York
+# is by region: that is the scale the source works at. A hunter who
+# doesn't know their ecoregion can find it from the county lists TPWD
+# publishes alongside the map.
+#
+# Each entry also carries the ecoregion's full published breeding range,
+# shown in the UI, because several of these ranges are very wide (South
+# Texas runs Nov 9 - Feb 1) and a single peak date badly understates
+# that spread.
+# region -> ((month, day) peak, "published breeding range")
+TX_ECOREGION_PEAK = {
+    "Cross Timbers (north)":        ((11, 15), "Oct 13 - Dec 17"),
+    "Cross Timbers (south)":        ((11, 17), "Oct 13 - Dec 17"),
+    "Edwards Plateau (east)":       ((11, 7),  "Oct 9 - Jan 30"),
+    "Edwards Plateau (central)":    ((11, 24), "Oct 9 - Jan 30"),
+    "Edwards Plateau (west)":       ((12, 5),  "Oct 9 - Jan 30"),
+    "Gulf Prairies and Marshes (north)": ((9, 30),  "Aug 24 - Nov 25"),
+    "Gulf Prairies and Marshes (south)": ((10, 31), "Aug 24 - Nov 25"),
+    "Pineywoods (north)":           ((11, 22), "Oct 21 - Jan 5"),
+    "Pineywoods (south)":           ((11, 12), "Oct 21 - Jan 5"),
+    "Post Oak Savannah (central)":  ((11, 10), "Sep 30 - Jan 16"),
+    "Post Oak Savannah (south)":    ((11, 11), "Sep 30 - Jan 16"),
+    "Rolling Plains (north)":       ((12, 3),  "Oct 8 - Dec 30"),
+    "Rolling Plains (south)":       ((11, 20), "Oct 8 - Dec 30"),
+    "South Texas Plains (east)":    ((12, 16), "Nov 9 - Feb 1"),
+    "South Texas Plains (west)":    ((12, 24), "Nov 9 - Feb 1"),
+    "Trans-Pecos":                  ((12, 8),  "Nov 4 - Jan 4"),
+}
+
+
+def _tx_region_entry(region):
+    """Unified lookup record for one TX ecoregion."""
+    month_day, span = TX_ECOREGION_PEAK[region]
+    return {
+        "peak": month_day,
+        "estimated": True,
+        "detail": (
+            f"TPWD peak breeding date for this study area. Published "
+            f"breeding range for the ecoregion: {span}."
+        ),
+        "caution": None,
+    }
+
+
+# --- Statewide single-date states ----------------------------------------
+#
+# Northern states have a far more synchronised rut than the South: the
+# published spread within a state is small enough that no agency breaks
+# it out below the state level. For these, one statewide date is the
+# honest unit - a county picker would invent structure the source does
+# not have, the same objection that keeps the isobar-map states out.
+#
+# Only states with a primary source get an entry here. Wisconsin and
+# Ohio were considered and deliberately left out: the Wisconsin figure
+# (Hunsaker et al. 2025, cited elsewhere in this project) covers only the
+# southwest of the state and is a movement-changepoint window rather than
+# a conception date, and the Ohio figure traces to Nixon 1971, which is a
+# date range read secondhand. Michigan, Iowa, New Jersey, Vermont, New
+# Hampshire and Maine turned up no agency primary source at all.
+#
+# state -> ((month, day), detail line)
+STATEWIDE_PEAK = {
+    "Illinois": (
+        (11, 8),
+        "Mean conception date for adult does. Green et al. 2017, "
+        "Theriogenology 94:71-78 - 3,884 does and 4,781 fetuses collected "
+        "over ten years from 2003. Yearlings averaged Nov 11 and fawns "
+        "Dec 2, so a herd skewed young breeds later than this date.",
+    ),
+    "Pennsylvania": (
+        (11, 15),
+        "Median conception falls Nov 11-17, with peak breeding in "
+        "mid-November. Pennsylvania Game Commission fetal aging of 3,507 "
+        "road-killed does, 1999-2006. This is also the source of this "
+        "app's default Nov 15 rut date.",
+    ),
+}
+
+
+def _statewide_entry(state):
+    """Unified lookup record for a state with a single statewide date."""
+    month_day, detail = STATEWIDE_PEAK[state]
+    return {"peak": month_day, "estimated": True, "detail": detail, "caution": None}
+
+
 # Per-state county tables, built once at import. Each state's table is
 # built only from that state's own source data, and the UI only ever
 # reads the table for the state the user picked - so a North Carolina
@@ -811,6 +907,14 @@ COUNTY_LOOKUPS = {
     "New York": {
         region: _ny_region_entry(region) for region in NY_REGION_PEAK
     },
+    "Texas": {
+        region: _tx_region_entry(region) for region in TX_ECOREGION_PEAK
+    },
+}
+
+# States with no sub-state breakdown - rendered without an area picker.
+STATEWIDE_LOOKUPS = {
+    state: _statewide_entry(state) for state in STATEWIDE_PEAK
 }
 
 # NC and GA share a number of county names (Macon, Jackson, Burke,
@@ -863,8 +967,85 @@ RUT_DATE_HELP_STATES = {
         ),
         "counties": COUNTY_LOOKUPS["New York"],
     },
+    "Texas": {
+        "url": "https://tpwd.texas.gov/huntwild/hunt/planning/rut_whitetailed_deer/",
+        "source_label": "TPWD's rut page",
+        "area_label": "Ecoregion",
+        "caption": (
+            "Texas Parks and Wildlife Department: peak breeding date per "
+            "ecoregion study area, from fetal aging of 2,436 does across 16 "
+            "study areas over three years. Texas is by ecoregion rather than "
+            "county because that is the scale the study works at - TPWD's page "
+            "lists which counties fall in each ecoregion."
+        ),
+        "counties": COUNTY_LOOKUPS["Texas"],
+    },
+    "Illinois": {
+        "url": "https://doi.org/10.1016/j.theriogenology.2017.02.010",
+        "source_label": "the source study (Green et al. 2017)",
+        "caption": (
+            "Illinois publishes no sub-state breakdown - the rut is "
+            "synchronised enough statewide that the source reports a single "
+            "date for the whole state, so this lookup does the same. Note "
+            "this is the adult-doe figure; younger does breed later."
+        ),
+        "statewide": STATEWIDE_LOOKUPS["Illinois"],
+    },
+    "Pennsylvania": {
+        "url": (
+            "https://www.pa.gov/agencies/pgc/wildlife/discover-pa-wildlife/"
+            "white-tailed-deer/when-is-the-rut"
+        ),
+        "source_label": "the PA Game Commission's rut page",
+        "caption": (
+            "Pennsylvania reports one statewide window rather than a "
+            "county-level breakdown, so this lookup gives a single date."
+        ),
+        "statewide": STATEWIDE_LOOKUPS["Pennsylvania"],
+    },
+    # --- Link-out only below ---------------------------------------------
+    #
+    # These states publish their breeding dates as smooth contour
+    # (isobar) maps whose bands cross county lines freely, rather than as
+    # one value per county. Mississippi's Holmes County alone spans three
+    # date bands; LDWF notes outright that several Louisiana parishes have
+    # two or more distinct breeding periods. Picking one date per county
+    # would invent a precision the source does not have, so these link out
+    # to the map the way South Carolina does.
+    #
+    # (A second reason not to force them into the picker: both states run
+    # well into January and February, and _season_date assumes a peak
+    # falls in the same autumn calendar year. That assumption would need
+    # revisiting before any Jan/Feb state is added to the lookup.)
+    "Louisiana": {
+        "url": "https://www.wlf.louisiana.gov/page/deer-breeding-periods",
+        "source_label": "the LDWF breeding-period map",
+        "caption": (
+            "Louisiana DWF: breeding dates from fetal measurements, drawn as "
+            "a contour map rather than county-by-county - the bands cross "
+            "parish lines, and LDWF notes several parishes have two or more "
+            "breeding periods, largely from historic restocking. Statewide "
+            "the range runs late September to late February, so find your "
+            "spot on the map rather than assuming a parish-wide date."
+        ),
+    },
+    "Mississippi": {
+        "url": (
+            "https://www.mdwfp.com/wildlife-hunting/wildlife-species-program/"
+            "deer-program/deer-breeding-date-map"
+        ),
+        "source_label": "the MDWFP breeding-date map",
+        "caption": (
+            "MDWFP: simulated mean conception dates from 20+ years of deer "
+            "health checks, drawn as isobars rather than county-by-county - a "
+            "single county can span three date bands. Breeding runs from "
+            "about Nov 30 in the northwest to early February in the "
+            "southeast, so read your location off the map."
+        ),
+    },
     "South Carolina": {
         "url": "https://www.dnr.sc.gov/wildlife/deer/reproductionmap.html",
+        "source_label": "the SC DNR reproduction map",
         "caption": (
             "SC DNR: peak breeding dates by region (this one is regional, not "
             "county-by-county like NC/GA). Coastal counties peak in mid-"
@@ -1577,8 +1758,20 @@ if st.checkbox("I don't know my peak rut date - help me find it by state"):
     )
     rut_help = RUT_DATE_HELP_STATES[rut_help_state]
     counties = rut_help.get("counties")
+    statewide = rut_help.get("statewide")
 
-    if counties:
+    if statewide:
+        # No sub-state breakdown published, so there is nothing to pick.
+        looked_up = _season_date(statewide["peak"])
+        st.success(
+            f"**Peak rut for {rut_help_state} (statewide): "
+            f"{_fmt_md(looked_up)}**"
+        )
+        st.caption(statewide["detail"])
+        if st.button(f"Use {_fmt_md(looked_up)}, {looked_up:%Y} as my peak rut date"):
+            st.session_state[RUT_PEAK_KEY] = looked_up
+            st.rerun()
+    elif counties:
         # counties is this state's own table; a county is never looked
         # up outside the state the user selected.
         # Keyed per state so the widget's remembered selection can't

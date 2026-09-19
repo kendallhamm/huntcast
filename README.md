@@ -500,9 +500,113 @@ Deer in New York.* Journal of Wildlife Management 10(3): 249–263, at
   *Regional Differences in Breeding Potential of White-Tailed Deer in New
   York*, which concerns breeding *potential*, not breeding dates.
 
-**South Carolina DNR** publishes a regional (not county-level) map, which
-is linked from the app but not transcribed — SC links out only:
-<https://www.dnr.sc.gov/wildlife/deer/reproductionmap.html>
+**Texas Parks and Wildlife Department.** *The Rut in White-tailed Deer.*
+<https://tpwd.texas.gov/huntwild/hunt/planning/rut_whitetailed_deer/>
+
+- **Study design:** 2,436 does examined across **16 study areas**
+  spanning the state's ecoregions, over three years, with conception
+  dates back-calculated from fetus length.
+- **What this project takes from it — now implemented:** all 16 peak
+  breeding dates, in `TX_ECOREGION_PEAK` in `solunar.py`. The lookup has
+  16 entries because TPWD reports one peak per *study area*, not per
+  administrative unit — so the dropdown is labelled "Ecoregion".
+- **Each entry also carries the ecoregion's published breeding range**,
+  shown in the UI, because several are very wide: South Texas Plains runs
+  Nov 9 – Feb 1, and a lone peak date badly understates that spread.
+- Texas has the widest spread of any state in the lookup: Gulf Prairies
+  north peaks **Sep 30**, South Texas Plains west peaks **Dec 24**.
+
+### Statewide single date — states with no sub-state breakdown
+
+Northern ruts are far more synchronised than southern ones. The
+published spread within these states is small enough that no agency
+breaks it out below the state level, so one statewide date is the honest
+unit and the app shows no area picker at all.
+
+**Green, M.L., A.C. Kelly, D. Satterthwaite-Phillips, M.B. Manjerovic,
+P. Shelton, J. Novakofski and N. Mateus-Pinilla. 2017.** *Reproductive
+characteristics of female white-tailed deer (Odocoileus virginianus) in
+the Midwestern USA.* Theriogenology 94: 71–78.
+DOI [10.1016/j.theriogenology.2017.02.010](https://doi.org/10.1016/j.theriogenology.2017.02.010)
+
+- **Study design:** 3,884 tested females and 4,781 fetuses, collected
+  over ten years from 2003, with conception dates back-calculated from
+  fetal measurements.
+- **What this project takes from it — now implemented:** Illinois
+  statewide peak, **Nov 8** (`STATEWIDE_PEAK` in `solunar.py`).
+- **Read the age breakdown before trusting the single number.** Nov 8 is
+  the **adult** mean. Yearlings averaged **Nov 11** and fawns **Dec 2**,
+  so a herd skewed young breeds materially later. The UI says so.
+- **Audit note — the title oversells the geography.** Despite "in the
+  Midwestern USA," the data are **Illinois only**; the paper's Ohio,
+  Michigan and Iowa mentions are citations to other studies, not results.
+  Checked against the full text. Do not cite this for other states.
+
+**Pennsylvania Game Commission.** *When is the rut?*
+<https://www.pa.gov/agencies/pgc/wildlife/discover-pa-wildlife/white-tailed-deer/when-is-the-rut>
+
+- **Study design:** fetal aging of 3,507 road-killed does, 1999–2006.
+- **What this project takes from it — now implemented:** Pennsylvania
+  statewide peak, **Nov 15**; median conception falls Nov 11–17. This is
+  the same source behind the app's default rut date, so the lookup now
+  makes that reasoning visible rather than implicit.
+
+### Link-out only — maps that don't follow county lines
+
+Some agencies publish breeding dates as smooth **contour (isobar) maps**
+whose bands cross county lines freely, rather than one value per county.
+Transcribing those per-county would invent precision the source does not
+have, so these states link to the map instead — the South Carolina
+pattern.
+
+- **Louisiana DWF** — breeding dates from fetal measurements, drawn as
+  contours; LDWF notes outright that several parishes have **two or more**
+  distinct breeding periods, largely from historic restocking. Statewide
+  range runs late Sept to late Feb.
+  <https://www.wlf.louisiana.gov/page/deer-breeding-periods>
+- **Mississippi MDWFP** — simulated mean conception dates from 20+ years
+  of deer health checks, drawn as isobars. Verified by inspection:
+  **Holmes County alone spans three date bands**, and several counties
+  contain contour bullseyes. Range is roughly Nov 30 in the northwest to
+  early Feb in the southeast.
+  <https://www.mdwfp.com/wildlife-hunting/wildlife-species-program/deer-program/deer-breeding-date-map>
+- **South Carolina DNR** — regional rather than county-level.
+  <https://www.dnr.sc.gov/wildlife/deer/reproductionmap.html>
+
+A second reason these are not forced into the picker: both Louisiana and
+Mississippi run well into January and February, while `_season_date()`
+assumes a peak falls in the same autumn calendar year. That assumption
+needs revisiting before any Jan/Feb state joins the lookup.
+
+### Searched but not added
+
+- **Tennessee TWRA** — regional averages circulate (west Nov 21, east
+  Nov 25, central Nov 17) but were only found in secondary write-ups, not
+  a TWRA primary source. Worth adding if the primary turns up.
+- **Arkansas, Missouri** — only broad statewide or west/east
+  generalisations found in secondary sources; nothing county- or
+  region-level from the agency.
+- **Wisconsin** — considered and rejected for the lookup. Hunsaker et al.
+  2025 (cited above) gives a peak breeding window of Oct 23 – Nov 12, but
+  it covers only the **southwest** of the state (Dane, Iowa, Grant
+  counties) and is a movement-changepoint window, not a conception date.
+  Converting it to a single statewide peak is a step the paper does not
+  take.
+- **Ohio** — adult breeding peaked **Nov 3–16** per Nixon 1971 (Ohio J.
+  Sci. 71:217–225), but that was read secondhand via Green et al. 2017
+  and is a 55-year-old date *range*, not a peak. Not strong enough.
+- **Michigan, Iowa, New Jersey, Vermont, New Hampshire, Maine** —
+  searched Sept 2026, no agency primary source with dates found; only
+  secondary "mid-November" generalisations. NH Fish & Game's deer page
+  returned 403 to automated fetches, so it is worth a manual look. Do not
+  re-search these without a new lead.
+- **Florida FWC** — publishes peak breeding by Deer Management Unit and
+  has collected fetal data since 2009. Florida has the widest spread in
+  the country (July to March, including a genuine summer rut), so it is
+  worth adding, but the per-DMU table was not located in this pass.
+- **Pennsylvania** — statewide median conception Nov 11–17 from 3,507
+  road-killed does (1999–2006). Already the basis for this app's Nov 15
+  default; not broken out finely enough to justify its own lookup entry.
 
 ### A county name is not a key
 
@@ -675,9 +779,14 @@ to open in your browser.
      (159 counties) carry their full county tables in-app: pick your
      state, then your county, and it shows that county's date with a
      **"Use <date>, <year> as my peak rut date"** button that fills the
-     field in for you. **New York** is split north/south rather than by
-     county, because that is the scale its source works at. South
-     Carolina links out to its regional map instead. The source PDF is always linked, but you never have to
+     field in for you. **New York** (north/south) and **Texas** (16 TPWD
+     ecoregions) are split by region rather than county, because that is
+     the scale their sources work at. **Illinois** and **Pennsylvania** show a
+     single statewide date with no picker, because their sources publish no
+     sub-state breakdown. **Louisiana**, **Mississippi** and
+     **South Carolina** link out to their agency maps instead — those are
+     contour maps whose bands cross county lines, so there is no honest
+     single date per county to show. The source PDF is always linked, but you never have to
      open it.
 5. Click **Get hunting forecast** to fetch the location, resolve its local
    timezone, and compute/display the forecast, one card per day.
