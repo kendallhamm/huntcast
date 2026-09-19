@@ -369,6 +369,458 @@ NO_RUT_YPH = 0.0
 # conception data beats any formula this app could apply.
 RUT_PEAK_DEFAULT_MONTH_DAY = (11, 15)
 
+# --- North Carolina county-level peak conception dates --------------------
+#
+# Transcribed from the NC Wildlife Resources Commission "Estimated Peak
+# Conception Dates" map (updated 2025), linked in RUT_DATE_HELP_STATES
+# below. The map itself is a raster image, so each county's name/date
+# pair was read off the map directly; the accompanying county sample
+# sizes come from page 2 of the same PDF and are stored alongside because
+# NCWRC explicitly warns that low-sample counties are less precise.
+#
+# Transcription check: all 100 county names match page 2's sample-size
+# table exactly, and the sample counts here sum to 1,776, the total
+# printed on that page.
+#
+# Conception date *is* peak breeding date, i.e. what this app calls peak
+# rut, so these values feed the rut term directly with no adjustment.
+#
+# Graham County has no printed estimate (1 sample); it is stored as None
+# and the UI falls back to its season zone's average.
+# county -> ((month, day) | None, n_samples)
+NC_COUNTY_PEAK_CONCEPTION = {
+    "Alamance":        ((11, 12), 12),
+    "Alexander":       ((11, 27), 5),
+    "Alleghany":       ((11, 28), 10),
+    "Anson":           ((11, 24), 12),
+    "Ashe":            ((11, 18), 11),
+    "Avery":           ((11, 26), 19),
+    "Beaufort":        ((10, 28), 8),
+    "Bertie":          ((11, 10), 23),
+    "Bladen":          ((11, 1), 11),
+    "Brunswick":       ((10, 17), 36),
+    "Buncombe":        ((11, 30), 18),
+    "Burke":           ((12, 7), 42),
+    "Cabarrus":        ((12, 2), 6),
+    "Caldwell":        ((12, 3), 18),
+    "Camden":          ((11, 14), 6),
+    "Carteret":        ((10, 17), 31),
+    "Caswell":         ((11, 16), 5),
+    "Catawba":         ((12, 5), 18),
+    "Chatham":         ((11, 12), 13),
+    "Cherokee":        ((12, 10), 13),
+    "Chowan":          ((11, 8), 13),
+    "Clay":            ((12, 10), 9),
+    "Cleveland":       ((12, 3), 5),
+    "Columbus":        ((10, 19), 19),
+    "Craven":          ((11, 4), 38),
+    "Cumberland":      ((11, 4), 6),
+    "Currituck":       ((11, 14), 6),
+    "Dare":            ((11, 20), 7),
+    "Davidson":        ((12, 2), 15),
+    "Davie":           ((11, 21), 7),
+    "Duplin":          ((11, 11), 10),
+    "Durham":          ((11, 13), 6),
+    "Edgecombe":       ((11, 16), 8),
+    "Forsyth":         ((11, 19), 5),
+    "Franklin":        ((11, 11), 12),
+    "Gaston":          ((11, 24), 17),
+    "Gates":           ((11, 5), 25),
+    "Graham":          (None, 1),
+    "Granville":       ((11, 4), 5),
+    "Greene":          ((11, 8), 15),
+    "Guilford":        ((11, 13), 19),
+    "Halifax":         ((11, 10), 6),
+    "Harnett":         ((11, 9), 9),
+    "Haywood":         ((12, 15), 10),
+    "Henderson":       ((12, 11), 18),
+    "Hertford":        ((11, 3), 15),
+    "Hoke":            ((11, 3), 7),
+    "Hyde":            ((10, 4), 311),
+    "Iredell":         ((11, 20), 11),
+    "Jackson":         ((12, 15), 5),
+    "Johnston":        ((11, 9), 6),
+    "Jones":           ((10, 30), 12),
+    "Lee":             ((11, 19), 9),
+    "Lenoir":          ((11, 2), 7),
+    "Lincoln":         ((12, 7), 11),
+    "Macon":           ((12, 19), 15),
+    "Madison":         ((12, 4), 8),
+    "Martin":          ((11, 11), 6),
+    "McDowell":        ((12, 3), 14),
+    "Mecklenburg":     ((11, 22), 11),
+    "Mitchell":        ((11, 23), 16),
+    "Montgomery":      ((11, 13), 105),
+    "Moore":           ((11, 12), 22),
+    "Nash":            ((11, 8), 8),
+    "New Hanover":     ((11, 14), 6),
+    "Northampton":     ((11, 9), 10),
+    "Onslow":          ((11, 1), 65),
+    "Orange":          ((11, 9), 7),
+    "Pamlico":         ((11, 5), 10),
+    "Pasquotank":      ((11, 10), 7),
+    "Pender":          ((11, 5), 17),
+    "Perquimans":      ((11, 8), 15),
+    "Person":          ((11, 14), 9),
+    "Pitt":            ((11, 7), 21),
+    "Polk":            ((11, 30), 6),
+    "Randolph":        ((11, 30), 11),
+    "Richmond":        ((11, 15), 33),
+    "Robeson":         ((11, 7), 18),
+    "Rockingham":      ((11, 13), 20),
+    "Rowan":           ((12, 1), 10),
+    "Rutherford":      ((12, 12), 12),
+    "Sampson":         ((11, 15), 7),
+    "Scotland":        ((11, 3), 5),
+    "Stanly":          ((11, 17), 45),
+    "Stokes":          ((11, 14), 47),
+    "Surry":           ((11, 20), 25),
+    "Swain":           ((12, 14), 5),
+    "Transylvania":    ((12, 9), 9),
+    "Tyrrell":         ((10, 16), 6),
+    "Union":           ((11, 18), 9),
+    "Vance":           ((11, 5), 6),
+    "Wake":            ((11, 8), 21),
+    "Warren":          ((11, 5), 8),
+    "Washington":      ((10, 24), 11),
+    "Watauga":         ((11, 19), 10),
+    "Wayne":           ((11, 8), 11),
+    "Wilkes":          ((11, 30), 29),
+    "Wilson":          ((11, 9), 11),
+    "Yadkin":          ((11, 28), 12),
+    "Yancey":          ((11, 27), 15),
+}
+
+# Season-zone averages printed in the map's legend, used as a fallback
+# for any county with no county-level estimate.
+NC_ZONE_AVERAGES = {
+    "Western": (12, 5),
+    "Northwestern": (11, 25),
+    "Central": (11, 15),
+    "Northeastern": (11, 8),
+    "Southeastern": (10, 31),
+}
+
+# Only needed for counties with no printed date; read off the map's
+# heavy zone boundaries. Keyed by NC county, and only ever consulted
+# through NC's own entry in COUNTY_LOOKUPS.
+NC_COUNTY_ZONE = {"Graham": "Western"}
+
+# NCWRC's own precision caveat: estimates built on few samples are
+# shakier. The map gives no threshold, so this is our own cutoff for
+# when to show a caution line - deliberately low, to flag only the
+# counties sitting at the bottom of the sample distribution.
+NC_LOW_SAMPLE_CUTOFF = 5
+
+# --- Georgia county-level peak movement dates ----------------------------
+#
+# Transcribed from Georgia DNR Wildlife Resources Division's "Peak Deer
+# Movement in Georgia" map, linked in RUT_DATE_HELP_STATES below. Unlike
+# the NC map this one is a real text layer, so the table was extracted
+# rather than read off an image.
+#
+# Important difference from NC: Georgia publishes a *peak movement week*
+# derived from Georgia DOT deer-vehicle-collision data, not a fetal-aged
+# conception date. WRD's stated basis for treating it as a rut proxy is a
+# UGA/WRD finding of "a strong correlation between peak deer-vehicle
+# collision timeframes, deer conception dates and the hourly movement
+# rates of deer tracked by GPS." So this is one inferential step further
+# from conception than NC's numbers, and the UI says so.
+#
+# Every published range is exactly 7 days, so the stored peak is the
+# midpoint (day 4) of the week; the source week is kept alongside it so
+# the UI can show the range rather than implying single-day precision.
+#
+# Transcription checks: two independent parses (regex over the flowed
+# text, and a positional parse off the word layer) agreed on all 159
+# counties with zero date mismatches; all 159 ranges are 7 days long; and
+# the 11 distinct week-starts found match the 11 buckets printed in the
+# map's own legend.
+#
+# The map's legend defines an asterisk for counties with fewer than 100
+# collisions, but no county in this edition carries one - verified in
+# both the text layer and the rendered page - so no GA county is flagged
+# low-confidence here.
+# county -> ((month, day) week midpoint, "MM/DD-MM/DD" source week)
+GA_COUNTY_PEAK_MOVEMENT = {
+    "Appling":         ((11, 6), "11/03-11/09"),
+    "Atkinson":        ((10, 23), "10/20-10/26"),
+    "Bacon":           ((10, 30), "10/27-11/02"),
+    "Baker":           ((11, 27), "11/24-11/30"),
+    "Baldwin":         ((10, 30), "10/27-11/02"),
+    "Banks":           ((11, 27), "11/24-11/30"),
+    "Barrow":          ((11, 13), "11/10-11/16"),
+    "Bartow":          ((11, 6), "11/03-11/09"),
+    "Ben Hill":        ((10, 16), "10/13-10/19"),
+    "Berrien":         ((11, 6), "11/03-11/09"),
+    "Bibb":            ((11, 6), "11/03-11/09"),
+    "Bleckley":        ((11, 6), "11/03-11/09"),
+    "Brantley":        ((10, 23), "10/20-10/26"),
+    "Brooks":          ((11, 20), "11/17-11/23"),
+    "Bryan":           ((10, 23), "10/20-10/26"),
+    "Bulloch":         ((10, 23), "10/20-10/26"),
+    "Burke":           ((10, 23), "10/20-10/26"),
+    "Butts":           ((11, 6), "11/03-11/09"),
+    "Calhoun":         ((11, 27), "11/24-11/30"),
+    "Camden":          ((10, 16), "10/13-10/19"),
+    "Candler":         ((10, 16), "10/13-10/19"),
+    "Carroll":         ((11, 13), "11/10-11/16"),
+    "Catoosa":         ((11, 13), "11/10-11/16"),
+    "Charlton":        ((10, 23), "10/20-10/26"),
+    "Chatham":         ((10, 23), "10/20-10/26"),
+    "Chattahoochee":   ((11, 13), "11/10-11/16"),
+    "Chattooga":       ((11, 6), "11/03-11/09"),
+    "Cherokee":        ((11, 13), "11/10-11/16"),
+    "Clarke":          ((11, 13), "11/10-11/16"),
+    "Clay":            ((10, 23), "10/20-10/26"),
+    "Clayton":         ((11, 6), "11/03-11/09"),
+    "Clinch":          ((10, 23), "10/20-10/26"),
+    "Cobb":            ((11, 6), "11/03-11/09"),
+    "Coffee":          ((10, 23), "10/20-10/26"),
+    "Colquitt":        ((11, 20), "11/17-11/23"),
+    "Columbia":        ((10, 23), "10/20-10/26"),
+    "Cook":            ((11, 20), "11/17-11/23"),
+    "Coweta":          ((11, 13), "11/10-11/16"),
+    "Crawford":        ((11, 6), "11/03-11/09"),
+    "Crisp":           ((11, 20), "11/17-11/23"),
+    "Dade":            ((11, 13), "11/10-11/16"),
+    "Dawson":          ((11, 20), "11/17-11/23"),
+    "DeKalb":          ((11, 6), "11/03-11/09"),
+    "Decatur":         ((12, 11), "12/08-12/14"),
+    "Dodge":           ((11, 6), "11/03-11/09"),
+    "Dooly":           ((11, 6), "11/03-11/09"),
+    "Dougherty":       ((11, 27), "11/24-11/30"),
+    "Douglas":         ((11, 13), "11/10-11/16"),
+    "Early":           ((12, 18), "12/15-12/21"),
+    "Echols":          ((10, 30), "10/27-11/02"),
+    "Effingham":       ((10, 23), "10/20-10/26"),
+    "Elbert":          ((11, 6), "11/03-11/09"),
+    "Emanuel":         ((10, 23), "10/20-10/26"),
+    "Evans":           ((10, 23), "10/20-10/26"),
+    "Fannin":          ((11, 20), "11/17-11/23"),
+    "Fayette":         ((11, 13), "11/10-11/16"),
+    "Floyd":           ((11, 6), "11/03-11/09"),
+    "Forsyth":         ((11, 13), "11/10-11/16"),
+    "Franklin":        ((11, 13), "11/10-11/16"),
+    "Fulton":          ((11, 13), "11/10-11/16"),
+    "Gilmer":          ((11, 13), "11/10-11/16"),
+    "Glascock":        ((10, 23), "10/20-10/26"),
+    "Glynn":           ((10, 16), "10/13-10/19"),
+    "Gordon":          ((11, 6), "11/03-11/09"),
+    "Grady":           ((12, 11), "12/08-12/14"),
+    "Greene":          ((11, 6), "11/03-11/09"),
+    "Gwinnett":        ((11, 13), "11/10-11/16"),
+    "Habersham":       ((11, 27), "11/24-11/30"),
+    "Hall":            ((11, 13), "11/10-11/16"),
+    "Hancock":         ((11, 6), "11/03-11/09"),
+    "Haralson":        ((11, 6), "11/03-11/09"),
+    "Harris":          ((11, 13), "11/10-11/16"),
+    "Hart":            ((10, 30), "10/27-11/02"),
+    "Heard":           ((11, 13), "11/10-11/16"),
+    "Henry":           ((11, 6), "11/03-11/09"),
+    "Houston":         ((11, 6), "11/03-11/09"),
+    "Irwin":           ((11, 27), "11/24-11/30"),
+    "Jackson":         ((11, 13), "11/10-11/16"),
+    "Jasper":          ((10, 30), "10/27-11/02"),
+    "Jeff Davis":      ((11, 6), "11/03-11/09"),
+    "Jefferson":       ((10, 23), "10/20-10/26"),
+    "Jenkins":         ((10, 16), "10/13-10/19"),
+    "Johnson":         ((11, 6), "11/03-11/09"),
+    "Jones":           ((11, 6), "11/03-11/09"),
+    "Lamar":           ((11, 6), "11/03-11/09"),
+    "Lanier":          ((10, 30), "10/27-11/02"),
+    "Laurens":         ((11, 6), "11/03-11/09"),
+    "Lee":             ((11, 20), "11/17-11/23"),
+    "Liberty":         ((10, 23), "10/20-10/26"),
+    "Lincoln":         ((10, 30), "10/27-11/02"),
+    "Long":            ((10, 23), "10/20-10/26"),
+    "Lowndes":         ((11, 6), "11/03-11/09"),
+    "Lumpkin":         ((11, 27), "11/24-11/30"),
+    "Macon":           ((11, 6), "11/03-11/09"),
+    "Madison":         ((11, 13), "11/10-11/16"),
+    "Marion":          ((11, 6), "11/03-11/09"),
+    "McDuffie":        ((10, 23), "10/20-10/26"),
+    "McIntosh":        ((10, 16), "10/13-10/19"),
+    "Meriwether":      ((11, 6), "11/03-11/09"),
+    "Miller":          ((12, 18), "12/15-12/21"),
+    "Mitchell":        ((11, 27), "11/24-11/30"),
+    "Monroe":          ((10, 30), "10/27-11/02"),
+    "Montgomery":      ((11, 6), "11/03-11/09"),
+    "Morgan":          ((11, 6), "11/03-11/09"),
+    "Murray":          ((11, 13), "11/10-11/16"),
+    "Muscogee":        ((11, 13), "11/10-11/16"),
+    "Newton":          ((11, 6), "11/03-11/09"),
+    "Oconee":          ((11, 13), "11/10-11/16"),
+    "Oglethorpe":      ((11, 6), "11/03-11/09"),
+    "Paulding":        ((11, 6), "11/03-11/09"),
+    "Peach":           ((11, 6), "11/03-11/09"),
+    "Pickens":         ((11, 13), "11/10-11/16"),
+    "Pierce":          ((11, 6), "11/03-11/09"),
+    "Pike":            ((11, 6), "11/03-11/09"),
+    "Polk":            ((11, 6), "11/03-11/09"),
+    "Pulaski":         ((11, 6), "11/03-11/09"),
+    "Putnam":          ((10, 30), "10/27-11/02"),
+    "Quitman":         ((12, 4), "12/01-12/07"),
+    "Rabun":           ((11, 27), "11/24-11/30"),
+    "Randolph":        ((11, 20), "11/17-11/23"),
+    "Richmond":        ((10, 23), "10/20-10/26"),
+    "Rockdale":        ((11, 6), "11/03-11/09"),
+    "Schley":          ((10, 30), "10/27-11/02"),
+    "Screven":         ((10, 23), "10/20-10/26"),
+    "Seminole":        ((12, 25), "12/22-12/28"),
+    "Spalding":        ((11, 6), "11/03-11/09"),
+    "Stephens":        ((11, 27), "11/24-11/30"),
+    "Stewart":         ((11, 20), "11/17-11/23"),
+    "Sumter":          ((11, 13), "11/10-11/16"),
+    "Talbot":          ((11, 13), "11/10-11/16"),
+    "Taliaferro":      ((11, 6), "11/03-11/09"),
+    "Tattnall":        ((11, 6), "11/03-11/09"),
+    "Taylor":          ((10, 30), "10/27-11/02"),
+    "Telfair":         ((10, 16), "10/13-10/19"),
+    "Terrell":         ((11, 27), "11/24-11/30"),
+    "Thomas":          ((11, 27), "11/24-11/30"),
+    "Tift":            ((11, 20), "11/17-11/23"),
+    "Toombs":          ((11, 6), "11/03-11/09"),
+    "Towns":           ((11, 20), "11/17-11/23"),
+    "Treutlen":        ((11, 6), "11/03-11/09"),
+    "Troup":           ((11, 13), "11/10-11/16"),
+    "Turner":          ((11, 13), "11/10-11/16"),
+    "Twiggs":          ((11, 6), "11/03-11/09"),
+    "Union":           ((11, 20), "11/17-11/23"),
+    "Upson":           ((11, 6), "11/03-11/09"),
+    "Walker":          ((11, 6), "11/03-11/09"),
+    "Walton":          ((11, 6), "11/03-11/09"),
+    "Ware":            ((10, 23), "10/20-10/26"),
+    "Warren":          ((10, 30), "10/27-11/02"),
+    "Washington":      ((10, 30), "10/27-11/02"),
+    "Wayne":           ((11, 6), "11/03-11/09"),
+    "Webster":         ((11, 27), "11/24-11/30"),
+    "Wheeler":         ((11, 6), "11/03-11/09"),
+    "White":           ((11, 27), "11/24-11/30"),
+    "Whitfield":       ((11, 13), "11/10-11/16"),
+    "Wilcox":          ((11, 13), "11/10-11/16"),
+    "Wilkes":          ((11, 6), "11/03-11/09"),
+    "Wilkinson":       ((10, 30), "10/27-11/02"),
+    "Worth":           ((11, 20), "11/17-11/23"),
+}
+
+
+def _nc_county_entry(county):
+    """Unified lookup record for one NC county."""
+    month_day, n_samples = NC_COUNTY_PEAK_CONCEPTION[county]
+    if month_day is None:
+        zone = NC_COUNTY_ZONE[county]
+        return {
+            "peak": NC_ZONE_AVERAGES[zone],
+            "estimated": False,
+            "detail": (
+                f"No county-level estimate published "
+                f"({n_samples} sample{'' if n_samples == 1 else 's'}). "
+                f"Showing the {zone} season-zone average instead."
+            ),
+            "caution": None,
+        }
+    caution = None
+    if n_samples <= NC_LOW_SAMPLE_CUTOFF:
+        caution = (
+            f"Based on only {n_samples} reproductive "
+            f"sample{'' if n_samples == 1 else 's'}. NCWRC notes that "
+            "estimates from few samples are less precise, so treat this "
+            "as a rough date."
+        )
+    return {
+        "peak": month_day,
+        "estimated": True,
+        "detail": f"Median conception date, from {n_samples} reproductive samples.",
+        "caution": caution,
+    }
+
+
+def _ga_county_entry(county):
+    """Unified lookup record for one GA county."""
+    month_day, week = GA_COUNTY_PEAK_MOVEMENT[county]
+    return {
+        "peak": month_day,
+        "estimated": True,
+        "detail": (
+            f"Midpoint of Georgia WRD's peak movement week ({week}), "
+            "which WRD reports as correlated with conception dates."
+        ),
+        "caution": None,
+    }
+
+
+# --- New York regional peak rut dates ------------------------------------
+#
+# Cheatum, E.L. and G.H. Morton. 1946. "Breeding Season of White-Tailed
+# Deer in New York." Journal of Wildlife Management 10(3): 249-263, at
+# p. 258. <https://www.jstor.org/stable/3795841>
+#
+# New York is deliberately NOT broken out by county: Cheatum and Morton
+# work at the scale of a north/south regional contrast, so a county
+# dropdown would imply a precision this source does not have.
+#
+# Verification: p. 258 was reviewed directly by the repo owner, who
+# confirmed both dates against the paper (Sept 2026). It is paywalled on
+# JSTOR, so it is not machine-checkable from this repo. Independent
+# search separately confirms the paper's framing: it contrasts northern
+# with southern New York herds, which is the split used here. For
+# context, a secondary Adirondack source puts peak Adirondack breeding
+# at November 10, three days off the northern figure below.
+#
+# Second caveat, on age: this is a 1946 study, by some margin the oldest
+# source in this file. New York's deer range, densities and herd
+# structure have all changed since. Photoperiod drives estrus timing, so
+# the dates should be relatively stable - but they have not been
+# re-derived from modern data here.
+#
+# Not to be confused with the same authors' companion paper "Regional
+# Differences in Breeding Potential of White-Tailed Deer in New York,"
+# which is about breeding *potential*, not breeding dates.
+NY_REGION_PEAK = {
+    "Northern New York": (11, 13),
+    "Southern New York": (11, 20),
+}
+
+
+def _ny_region_entry(region):
+    """Unified lookup record for one NY region."""
+    return {
+        "peak": NY_REGION_PEAK[region],
+        "estimated": True,
+        "detail": (
+            "Regional estimate - New York is split north/south, not by "
+            "county. Cheatum & Morton 1946, J. Wildlife Management "
+            "10(3):249-263, p. 258."
+        ),
+        "caution": None,
+    }
+
+
+# Per-state county tables, built once at import. Each state's table is
+# built only from that state's own source data, and the UI only ever
+# reads the table for the state the user picked - so a North Carolina
+# selection can never surface a Georgia county, or vice versa.
+COUNTY_LOOKUPS = {
+    "North Carolina": {
+        county: _nc_county_entry(county) for county in NC_COUNTY_PEAK_CONCEPTION
+    },
+    "Georgia": {
+        county: _ga_county_entry(county) for county in GA_COUNTY_PEAK_MOVEMENT
+    },
+    "New York": {
+        region: _ny_region_entry(region) for region in NY_REGION_PEAK
+    },
+}
+
+# NC and GA share a number of county names (Macon, Jackson, Burke,
+# Union, Warren, Wilkes, Cherokee, Clay and others) with *different*
+# peak dates - NC's Macon is Dec 19, Georgia's is Nov 6. A county name
+# is therefore only ever meaningful together with its state, and nothing
+# in this module looks a county up without one: every read goes through
+# COUNTY_LOOKUPS[state][county]. There is deliberately no flat
+# county -> date mapping anywhere.
+
 # Per-state lookups a user can consult if they don't know their local peak
 # rut date. Only NC is wired up for now; add more states as county-level
 # conception/breeding-date sources are found and verified.
@@ -378,8 +830,47 @@ RUT_DATE_HELP_STATES = {
         "caption": (
             "NC Wildlife Resources Commission: median conception date by county. "
             "Conception date is peak breeding date, i.e. what this app calls "
-            "\"peak rut\" - this varies by county, so find the county you plan "
-            "to hunt (not just where you live) and enter its date above."
+            "\"peak rut\" - this varies by county, so pick the county you plan "
+            "to hunt, not just the one you live in."
+        ),
+        "counties": COUNTY_LOOKUPS["North Carolina"],
+    },
+    "Georgia": {
+        "url": "https://georgiawildlife.com/sites/default/files/wrd/pdf/research/Georgia-Rut-Map.pdf",
+        "caption": (
+            "Georgia DNR Wildlife Resources Division: peak deer *movement* "
+            "week by county, mapped from Georgia DOT deer-vehicle-collision "
+            "data. WRD reports that collision timing, conception dates and "
+            "GPS movement rates correlate strongly, which is what makes this "
+            "usable as a rut date - but it is a step further from conception "
+            "than North Carolina's numbers. Many GA herds were restocked "
+            "decades ago from out-of-state stock and kept their ancestral "
+            "breeding clock, so adjacent counties can peak weeks apart - pick "
+            "your county, not a regional average."
+        ),
+        "counties": COUNTY_LOOKUPS["Georgia"],
+    },
+    "New York": {
+        "url": "https://www.jstor.org/stable/3795841",
+        "source_label": "the source paper (JSTOR)",
+        "area_label": "Region",
+        "caption": (
+            "Cheatum & Morton 1946, \"Breeding Season of White-Tailed Deer in "
+            "New York\" (J. Wildlife Management 10(3):249-263, p. 258). New "
+            "York is split north/south rather than by county, because that is "
+            "the scale this source works at. Note this is a 1946 study - the "
+            "oldest source behind any date in this app."
+        ),
+        "counties": COUNTY_LOOKUPS["New York"],
+    },
+    "South Carolina": {
+        "url": "https://www.dnr.sc.gov/wildlife/deer/reproductionmap.html",
+        "caption": (
+            "SC DNR: peak breeding dates by region (this one is regional, not "
+            "county-by-county like NC/GA). Coastal counties peak in mid-"
+            "October; most of the state peaks late October-early November; a "
+            "small band near Seneca/Greenville peaks late November-early "
+            "December."
         ),
     },
 }
@@ -1039,29 +1530,83 @@ st.caption(
     "service. Enter a postal code to get a forecast for that location."
 )
 
-def _default_rut_peak():
-    """RUT_PEAK_DEFAULT_MONTH_DAY in whichever season the user is most
-    likely to mean: the upcoming/current fall if it's July or later,
-    otherwise the rut that just passed."""
+RUT_PEAK_KEY = "rut_peak_date"
+
+
+def _rut_season_year():
+    """The year of whichever rut the user is most likely to mean: the
+    upcoming/current fall if it's July or later, otherwise the rut that
+    just passed."""
     today = date.today()
-    month, day = RUT_PEAK_DEFAULT_MONTH_DAY
-    year = today.year if today.month >= 7 else today.year - 1
-    return date(year, month, day)
+    return today.year if today.month >= 7 else today.year - 1
+
+
+def _season_date(month_day):
+    month, day = month_day
+    return date(_rut_season_year(), month, day)
+
+
+def _fmt_md(d):
+    """'Nov 30' - built by hand because %-d/%#d aren't portable."""
+    return f"{d:%b} {d.day}"
+
+
+def _default_rut_peak():
+    """RUT_PEAK_DEFAULT_MONTH_DAY in the season year the user likely means."""
+    return _season_date(RUT_PEAK_DEFAULT_MONTH_DAY)
 
 
 _by_name = sorted(SUPPORTED_COUNTRIES, key=lambda pair: pair[1])
 _name_to_code = {name: code for code, name in _by_name}
 _country_names = list(_name_to_code.keys())
 
+# The date widget below reads its value from session state so the
+# county lookup's "Use this date" button can fill it in.
+if RUT_PEAK_KEY not in st.session_state:
+    st.session_state[RUT_PEAK_KEY] = _default_rut_peak()
+
 if st.checkbox("I don't know my peak rut date - help me find it by state"):
+    st.caption(
+        f"Few states supported so far ({', '.join(RUT_DATE_HELP_STATES.keys())}) - "
+        "more will be added as county- or region-level sources are found."
+    )
     rut_help_state = st.selectbox(
         "State",
         list(RUT_DATE_HELP_STATES.keys()),
-        help="More states will be added as county-level sources are found.",
+        help="More states will be added as county- or region-level sources are found.",
     )
     rut_help = RUT_DATE_HELP_STATES[rut_help_state]
+    counties = rut_help.get("counties")
+
+    if counties:
+        # counties is this state's own table; a county is never looked
+        # up outside the state the user selected.
+        # Keyed per state so the widget's remembered selection can't
+        # survive a state switch and point at another state's area.
+        area_label = rut_help.get("area_label", "County")
+        area = st.selectbox(
+            area_label, sorted(counties), key=f"area_{rut_help_state}"
+        )
+        entry = counties[area]
+        looked_up = _season_date(entry["peak"])
+
+        # "Macon County", but just "Northern New York" for a region.
+        shown = f"{area} County" if area_label == "County" else area
+        if entry["estimated"]:
+            st.success(f"**Peak rut for {shown}: {_fmt_md(looked_up)}**")
+        else:
+            st.info(f"**{shown}: {_fmt_md(looked_up)}**")
+        st.caption(entry["detail"])
+        if entry["caution"]:
+            st.warning(entry["caution"])
+
+        if st.button(f"Use {_fmt_md(looked_up)}, {looked_up:%Y} as my peak rut date"):
+            st.session_state[RUT_PEAK_KEY] = looked_up
+            st.rerun()
+
     st.caption(rut_help["caption"])
-    st.markdown(f"[Open the full PDF]({rut_help['url']})")
+    label = rut_help.get("source_label", f"the full {rut_help_state} map (PDF)")
+    st.markdown(f"[Open {label}]({rut_help['url']})")
 
 with st.form("location_form"):
     col1, col2 = st.columns([2, 1])
@@ -1074,7 +1619,7 @@ with st.form("location_form"):
     days = st.slider("Days", min_value=1, max_value=30, value=7)
     rut_peak = st.date_input(
         "Peak breeding (rut) date for your area",
-        value=_default_rut_peak(),
+        key=RUT_PEAK_KEY,
         help=(
             "Rut phase is the strongest driver of fall deer movement in the "
             "research this app's scoring is calibrated against, but peak rut "

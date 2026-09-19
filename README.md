@@ -395,6 +395,130 @@ of Male White-Tailed Deer.* Southeastern Naturalist 24(2):137–150. DOI
   matter more than minor ones, and minor periods may be neutral or
   negative** — which is why `MINOR_YPH` is 0.0.
 
+### County rut dates — peak conception lookups
+
+These are not weights and do not affect the scoring model. They answer a
+separate question: *what date should I enter as peak rut?* Every value is
+a published state-agency estimate, transcribed as-is.
+
+**North Carolina Wildlife Resources Commission. 2025.** *Estimated Peak
+Conception Dates.* Two-page PDF, updated 2025.
+<https://www.ncwildlife.gov/media/4373/download?attachment>
+
+- **Study design:** peak conception estimated per county from fetal aging
+  of reproductive samples collected by NCWRC biologists, drawn from
+  roadkill and late-season hunter-harvested does; 1,776 samples through
+  May 2025.
+- **What this project takes from it — now implemented:** all 100 county
+  dates, stored in `NC_COUNTY_PEAK_CONCEPTION` in `solunar.py` alongside
+  each county's sample size. Conception date *is* peak breeding date, so
+  these feed the rut term directly with no adjustment.
+- **Transcription note:** page 1 is a raster map, not text, so the
+  county/date pairs were read off the map image rather than extracted.
+  Two checks constrain that transcription: the 100 county names match
+  page 2's sample-size table exactly, and the transcribed sample sizes
+  sum to 1,776, the total printed on the PDF. A date misread would not be
+  caught by either check, so treat individual counties as verified only
+  to the standard of a careful read of the map.
+- **Caveats carried into the UI, in NCWRC's own framing:** estimates from
+  few samples are less precise, so the app shows a caution line for any
+  county at or below `NC_LOW_SAMPLE_CUTOFF` (5 samples): Alexander,
+  Caswell, Cleveland, Forsyth, Graham, Granville, Jackson, Scotland and
+  Swain. **Graham County has no printed estimate at all** (1 sample); it
+  falls back to its season-zone average (Western, Dec 5) and the UI says
+  so. The 5-sample cutoff is this project's own threshold, not NCWRC's —
+  the PDF warns about low samples without naming a number.
+- **Not a moon-phase source, and worth quoting on that:** the PDF states
+  that doe estrus cycles are *"triggered by shortening day length during
+  the fall, rather than weather events, including moon phase."* That is
+  consistent with this project's treatment of solunar periods as a
+  within-day timing term, never as a driver of rut timing.
+
+**Georgia DNR Wildlife Resources Division.** *Peak Deer Movement in
+Georgia.* One-page PDF map + county table.
+<https://georgiawildlife.com/sites/default/files/wrd/pdf/research/Georgia-Rut-Map.pdf>
+
+- **Study design:** peak *movement* week per county, mapped from Georgia
+  DOT deer-vehicle-collision data. WRD's stated basis for reading that as
+  rut timing is a UGA/WRD finding of "a strong correlation between peak
+  deer-vehicle collision timeframes, deer conception dates and the hourly
+  movement rates of deer tracked by GPS."
+- **What this project takes from it — now implemented:** all 159 county
+  weeks, in `GA_COUNTY_PEAK_MOVEMENT` in `solunar.py`. Every published
+  range is exactly 7 days, so the stored peak date is the **midpoint**
+  (day 4) of the week; the source week is kept alongside it and shown in
+  the UI, so the app never implies single-day precision Georgia didn't
+  claim.
+- **Weaker than the NC source, and labelled as such.** Georgia's number
+  is collision-derived and one inferential step further from conception
+  than North Carolina's fetal-aged dates. The UI says so in the state
+  caption rather than presenting the two states as equivalent.
+- **Transcription checks:** this PDF has a real text layer, so the table
+  was extracted rather than read off an image. Two independent parses (a
+  regex over the flowed text, and a positional parse off the word layer)
+  agreed on all 159 counties with **zero** date mismatches; all 159
+  ranges are 7 days; and the 11 distinct week-starts recovered match the
+  11 buckets printed in the map's own legend.
+- **Audit note — asterisks:** the map's legend defines an asterisk for
+  counties with fewer than 100 collisions ("accuracy of the dates shown
+  for these counties will be low"), but **no county in this edition
+  carries one**, verified in both the text layer and the rendered page.
+  So no Georgia county is flagged low-confidence in the app. If a later
+  edition restores the asterisks, that flag should be transcribed too.
+- **Audit note — corrected caption:** an earlier version of this app
+  described the Georgia map as derived "from fetal aging and a
+  deer-vehicle-collision correlation study." The PDF does not support the
+  fetal-aging half: the map itself is built from GDOT collision data, and
+  fetal aging appears only inside the correlation WRD cites. The caption
+  now describes it as collision-derived.
+
+**Cheatum, E.L. and G.H. Morton. 1946.** *Breeding Season of White-Tailed
+Deer in New York.* Journal of Wildlife Management 10(3): 249–263, at
+**p. 258**. <https://www.jstor.org/stable/3795841>
+
+- **What this project takes from it — now implemented:** two regional
+  peak breeding dates in `NY_REGION_PEAK` in `solunar.py` — **northern
+  New York Nov 13, southern New York Nov 20.**
+- **Region, not county, on purpose.** New York is the one state in the
+  lookup that is *not* broken out by county. Cheatum and Morton work at
+  the scale of a north/south regional contrast, so a county dropdown
+  would imply a precision this source does not have. The UI labels the
+  dropdown "Region" rather than "County" for NY.
+- **Verification:** p. 258 was reviewed directly by the repo owner, who
+  confirmed both dates against the paper (Sept 2026). It is paywalled on
+  JSTOR, so it has not been machine-checked as part of this repo's
+  tooling. Independent search separately confirms the paper's framing —
+  it contrasts northern with southern New York herds, which is the split
+  used here. For context, a secondary Adirondack source puts peak
+  Adirondack breeding at Nov 10, three days off the northern figure.
+- **Audit note — age.** At 1946 this is by some margin the oldest source
+  in this file, and the only one predating the GPS-collar literature the
+  scoring model is built on. Estrus timing is photoperiod-driven, so the
+  dates should be comparatively stable, but they have not been
+  re-derived from modern New York data here.
+- **Not to be confused with** the same authors' companion paper
+  *Regional Differences in Breeding Potential of White-Tailed Deer in New
+  York*, which concerns breeding *potential*, not breeding dates.
+
+**South Carolina DNR** publishes a regional (not county-level) map, which
+is linked from the app but not transcribed — SC links out only:
+<https://www.dnr.sc.gov/wildlife/deer/reproductionmap.html>
+
+### A county name is not a key
+
+North Carolina and Georgia share 24 county names — Burke, Camden,
+Chatham, Cherokee, Clay, Forsyth, Franklin, Greene, Jackson, Jones, Lee,
+Lincoln, Macon, Madison, Mitchell, Montgomery, Polk, Randolph, Richmond,
+Union, Warren, Washington, Wayne and Wilkes — and they do **not** share
+dates. NC's Macon County peaks December 19; Georgia's Macon County peaks
+November 6, six weeks earlier.
+
+So a county name only means something alongside its state. There is
+deliberately no flat `county -> date` mapping in `solunar.py`: each
+state's table is built only from that state's own source data, every read
+goes through `COUNTY_LOOKUPS[state][county]`, and the county dropdown is
+keyed per state so a remembered selection can't survive a state switch.
+
 ### Consulted — informs structure or known gaps
 
 **Goethlich, J. 2019.** *Effects of Abiotic Factors on White-tailed Deer
@@ -546,6 +670,15 @@ to open in your browser.
 4. **Peak breeding (rut) date** - defaults to November 15. Override it
    with your state wildlife agency's conception data if they publish it;
    local data beats any formula this app could apply.
+   - Tick **"I don't know my peak rut date - help me find it by state"**
+     to look it up. **North Carolina** (100 counties) and **Georgia**
+     (159 counties) carry their full county tables in-app: pick your
+     state, then your county, and it shows that county's date with a
+     **"Use <date>, <year> as my peak rut date"** button that fills the
+     field in for you. **New York** is split north/south rather than by
+     county, because that is the scale its source works at. South
+     Carolina links out to its regional map instead. The source PDF is always linked, but you never have to
+     open it.
 5. Click **Get hunting forecast** to fetch the location, resolve its local
    timezone, and compute/display the forecast, one card per day.
 
