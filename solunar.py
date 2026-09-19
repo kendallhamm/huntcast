@@ -32,6 +32,7 @@ import ephem
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 # ---------------------------------------------------------------------------
 # Geocoding (Zippopotam.us - free, no key)
@@ -367,6 +368,21 @@ NO_RUT_YPH = 0.0
 # relied on.) Users elsewhere should override it - local wildlife agency
 # conception data beats any formula this app could apply.
 RUT_PEAK_DEFAULT_MONTH_DAY = (11, 15)
+
+# Per-state lookups a user can consult if they don't know their local peak
+# rut date. Only NC is wired up for now; add more states as county-level
+# conception/breeding-date sources are found and verified.
+RUT_DATE_HELP_STATES = {
+    "North Carolina": {
+        "url": "https://www.ncwildlife.gov/media/4373/download?attachment",
+        "caption": (
+            "NC Wildlife Resources Commission: median conception date by county. "
+            "Conception date is peak breeding date, i.e. what this app calls "
+            "\"peak rut\" - this varies by county, so find the county you plan "
+            "to hunt (not just where you live) and enter its date above."
+        ),
+    },
+}
 
 # --- Weather terms -------------------------------------------------------
 #
@@ -1036,6 +1052,17 @@ _by_name = sorted(SUPPORTED_COUNTRIES, key=lambda pair: pair[1])
 _name_to_code = {name: code for code, name in _by_name}
 _country_names = list(_name_to_code.keys())
 
+if st.checkbox("I don't know my peak rut date - help me find it by state"):
+    rut_help_state = st.selectbox(
+        "State",
+        list(RUT_DATE_HELP_STATES.keys()),
+        help="More states will be added as county-level sources are found.",
+    )
+    rut_help = RUT_DATE_HELP_STATES[rut_help_state]
+    st.caption(rut_help["caption"])
+    st.markdown(f"[Open the full PDF]({rut_help['url']})")
+    components.iframe(rut_help["url"], height=600, scrolling=True)
+
 with st.form("location_form"):
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -1055,7 +1082,8 @@ with st.form("location_form"):
             "latitude. The default (Nov 15) follows the Pennsylvania Game "
             "Commission's fetal-aging data (peak breeding mid-November, half "
             "of does bred by Nov 13). If your state wildlife agency publishes "
-            "conception dates for your area, use those."
+            "conception dates for your area, use those - or check the "
+            "'help me find it by state' box above."
         ),
     )
     submitted = st.form_submit_button("Get feeding times", type="primary")
