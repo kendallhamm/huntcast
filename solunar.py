@@ -1030,12 +1030,13 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
 # Streamlit UI
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Solunar Feeding Times", page_icon=":deer:")
-st.title(":deer: Solunar Feeding Times")
+st.set_page_config(page_title="Huntcaster: Hunting Window Forecast", page_icon=":deer:")
+st.title(":deer: Huntcaster: Hunting Window Forecast")
 st.caption(
-    "Major/minor solunar feeding-time windows for hunting & fishing, computed "
-    "locally from moon transit/rise/set times - no API key, no external "
-    "solunar service. Enter a postal code to get a forecast for that location."
+    "Ranks the best 6-hour deer hunting windows by combining rut phase, "
+    "hourly weather (temp, precip, wind, pressure), and solunar major/minor "
+    "periods - all computed locally, no API keys, no external solunar "
+    "service. Enter a postal code to get a forecast for that location."
 )
 
 def _default_rut_peak():
