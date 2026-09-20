@@ -73,6 +73,7 @@ dmypy.json
 
 # Streamlit
 .streamlit/secrets.toml
+*.log
 
 # IDEs
 .vscode/
