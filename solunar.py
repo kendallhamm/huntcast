@@ -1940,8 +1940,13 @@ if submitted:
                         # labelOverlap off forces every column to keep its
                         # label - the default hides some when 15 bars are
                         # this tightly packed, which is what made the order
-                        # look scrambled.
-                        axis=alt.Axis(labelAngle=0, labelOverlap=False, labelBaseline="top"),
+                        # look scrambled. Rotated -90 so each label needs
+                        # only its own bar's width instead of colliding with
+                        # its neighbors.
+                        axis=alt.Axis(
+                            labelAngle=-90, labelOverlap=False,
+                            labelAlign="right", labelBaseline="middle",
+                        ),
                     )
                     # A stroke in the surface color puts a 2px gap between
                     # touching segments (and between the bar and the axis),
