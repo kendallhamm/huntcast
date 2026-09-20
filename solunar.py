@@ -1,7 +1,7 @@
 """
-Standalone Streamlit app: ranks the best deer hunting windows for any
-postal/zip code worldwide, by combining rut phase, weather, and solunar
-major/minor feeding-time windows.
+Huntcaster - a standalone Streamlit app that ranks the best deer hunting
+windows for any postal/zip code worldwide, by combining rut phase,
+weather, and solunar major/minor periods.
 
 Fully self-contained - no dependency on, or import of, anything outside
 this folder. No API keys, no .env, no secrets: geocoding is a public
@@ -9,10 +9,11 @@ Zippopotam.us lookup, timezone resolution and the hourly weather forecast
 are public Open-Meteo lookups, and the solunar math itself runs locally
 via the `ephem` astronomy library - no external solunar service involved.
 
-On top of the per-day feeding times, rut phase and the hourly forecast
+On top of the per-day solunar events, rut phase and the hourly forecast
 (temperature, precipitation chance, wind, barometric pressure) are
-cross-referenced against the solunar events to rank the best 6-hour
-"hunting windows" - see the scoring section below for the formula.
+cross-referenced against those events to rank the best 6-hour "hunting
+windows" - see the scoring section below for the formula. Windows that
+never touch legal shooting light are dropped before scoring.
 
 Scoring weights are not hand-tuned. Every activity term is expressed in
 the unit the underlying GPS-collar research measured it in (yards per
@@ -272,6 +273,19 @@ _KIND_EMOJI = {"Major": ":full_moon:", "Minor": ":waxing_gibbous_moon:", "Sunris
 
 WINDOW_HOURS = 6
 
+# Hunting at night is illegal everywhere in the US; legal shooting hours
+# generally run from some margin before sunrise to the same margin after
+# sunset (states vary on the exact margin - many use 30 minutes, some up
+# to an hour). This app uses the more conservative 1-hour margin so it
+# never recommends a window a stricter state would call illegal, and
+# drops windows outright when they get no benefit from the doubt: a
+# window is excluded only when it starts at/after that day's own
+# sunset+margin AND finishes at/before that morning's sunrise-margin,
+# i.e. it never touches legal light at all. A window that only partly
+# overlaps the margin (e.g. starts just before legal dawn) is still
+# scored and can still be recommended.
+LEGAL_LIGHT_MARGIN = timedelta(hours=1)
+
 # Peak rut (+142 yph) was the largest effect Neary et al. 2025 measured.
 # Anchor it at 3.0 points; every other activity term scales from there.
 POINTS_PER_YPH = 3.0 / 142.0
@@ -317,15 +331,14 @@ CREPUSCULAR_HALF_WINDOW = timedelta(minutes=60)
 # What all three do agree on: majors matter more than minors, and minors
 # are neutral-to-negative. Hence MINOR_YPH = 0.
 #
-# Net effect: solunar windows are still computed and displayed (they are
-# what this app is for), but they barely move the ranking, because that
-# is what the measurements support.
+# Net effect: solunar windows are computed and displayed because hunters
+# ask for them, but they barely move the ranking, because that is what
+# the measurements support.
 MAJOR_YPH = 3.0
 MINOR_YPH = 0.0
 
-# Rut phase. The single largest effect on fall deer movement, and the one
-# the previous version of this model was missing entirely. Values are the
-# daytime movement deltas against the season mean reported by Neary et
+# Rut phase. The single largest effect on fall deer movement. Values are
+# the daytime movement deltas against the season mean reported by Neary et
 # al. 2025 (their "All data" series), keyed by day offset from peak
 # breeding. Neary et al. space their phases 14 days apart (Mississippi
 # pre-rut Nov 27 / early Dec 11 / peak Dec 25 / late Jan 8 / post Jan 22),
@@ -1099,14 +1112,12 @@ COLD_MAX_YPH = WEATHER_BOUND_YPH
 # Precipitation and wind. Held to HALF the bound, and at the same tier as
 # each other, because they have the same evidential standing: each was
 # significant in exactly 1 of Webb et al. 2010's 8 significant models.
-# An earlier version gave rain the full bound on the strength of the
-# Penn State Deer-Forest Study's storm analysis "finding deer moved less
-# during storms" - re-reading that source, its two years point in
-# opposite directions (2016: 102 yph outside storms vs 113 during; 2017:
-# 111 vs 98) and it concludes there was no significant effect, so it
-# supports neither the size nor the direction of a rain penalty. The
-# penalty's *direction* is a judgment call. Wind additionally doesn't
-# engage at all below the threshold.
+# The Penn State Deer-Forest Study's storm analysis does not support a
+# larger rain penalty: its two years point in opposite directions (2016:
+# 102 yph outside storms vs 113 during; 2017: 111 vs 98) and it concludes
+# there was no significant effect, so it establishes neither the size nor
+# the direction of one. The penalty's *direction* is a judgment call.
+# Wind additionally doesn't engage at all below the threshold.
 PRECIP_MAX_PENALTY_YPH = WEATHER_BOUND_YPH / 2
 WIND_PENALTY_THRESHOLD_MPH = 15.0
 WIND_PENALTY_FULL_MPH = 40.0
@@ -1150,8 +1161,8 @@ WEATHER_CREPUSCULAR_DAMPING = 0.5
 # of thumb; no located study tests a static pressure level, and Webb et
 # al.'s within-day null is the closest thing to a test. Its weight is
 # therefore 0 - it stays in the code as a single constant to raise if
-# evidence ever appears, and the band is still reported in the window
-# text for hunters who track it.
+# evidence ever appears, and the band is reported in the window text for
+# hunters who track it.
 HPA_PER_INHG = 33.8639
 
 PRESSURE_DROP_LOOKBACK_HOURS = 24
@@ -1179,8 +1190,8 @@ OPEN_METEO_MAX_FORECAST_DAYS = 16
 # Days of *past* hourly data to request alongside the forecast. Serves two
 # purposes: it supplies the per-hour temperature normals the cold-anomaly
 # term is measured against, and it gives the 24-hour pressure lookback
-# real history for windows early in the forecast (which previously scored
-# no pressure trend at all, since nothing preceded them).
+# real history for windows early in the forecast, which would otherwise
+# have nothing preceding them to measure a trend against.
 PAST_DAYS_LOOKBACK = 7
 
 
@@ -1447,9 +1458,9 @@ def _pressure_drop_in(samples_by_hour, hour_start):
     rising. None if there's no pressure reading at either end.
 
     Keyed by datetime rather than timeline index so it can reach into the
-    PAST_DAYS_LOOKBACK days of history that precede the timeline; the
-    previous index-based version silently scored no pressure trend for
-    every window in the first 24 hours of the forecast."""
+    PAST_DAYS_LOOKBACK days of history that precede the timeline, which is
+    what lets windows in the first 24 hours of the forecast score a
+    pressure trend at all."""
     before = samples_by_hour.get(hour_start - timedelta(hours=PRESSURE_DROP_LOOKBACK_HOURS))
     now = samples_by_hour.get(hour_start)
     if not before or not now:
@@ -1564,19 +1575,56 @@ def score_window(timeline, start_idx, window_hours=WINDOW_HOURS):
     return breakdown["total"] if breakdown else None
 
 
-def find_candidate_windows(timeline, now_local, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS):
+def _sun_times_by_date(days_data):
+    """{date: {'sunrise': dt or None, 'sunset': dt or None}} from
+    fetch_solunar()'s per-day periods, for the legal-light check below."""
+    sun_times = {}
+    for day in days_data:
+        entry = {"sunrise": None, "sunset": None}
+        for p in day["periods"]:
+            if p["kind"] == "Sunrise":
+                entry["sunrise"] = p["start"]
+            elif p["kind"] == "Sunset":
+                entry["sunset"] = p["start"]
+        if day["periods"]:
+            sun_times[day["periods"][0]["start"].date()] = entry
+    return sun_times
+
+
+def _is_illegal_night_window(window_start, window_end, sun_times):
+    """True if [window_start, window_end) never touches legal shooting
+    light, i.e. it starts at/after its own day's sunset+LEGAL_LIGHT_MARGIN
+    and finishes at/before its end day's sunrise-LEGAL_LIGHT_MARGIN. Missing
+    sunrise/sunset data (e.g. polar latitudes) never excludes a window."""
+    sunset = sun_times.get(window_start.date(), {}).get("sunset")
+    starts_after_dusk = sunset is not None and window_start >= sunset + LEGAL_LIGHT_MARGIN
+
+    sunrise = sun_times.get(window_end.date(), {}).get("sunrise")
+    ends_before_dawn = sunrise is not None and window_end <= sunrise - LEGAL_LIGHT_MARGIN
+
+    return starts_after_dusk and ends_before_dawn
+
+
+def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS):
     """Slide a `window_hours`-wide window across EVERY possible starting
     hour in `timeline` and return the `top_n` best-scoring,
     non-overlapping windows, highest score first. A window that has
     already fully elapsed (its end is at or before `now_local`) is never
-    a candidate. Non-overlap is enforced greedily (best score first,
-    skip anything sharing an hour with an already-picked window) so two
-    windows that are really "the same" opportunity shifted by an hour
-    don't crowd out genuine variety."""
+    a candidate, and neither is a window that never touches legal
+    shooting light (see _is_illegal_night_window) - hunting at night
+    isn't legal, so those windows aren't computed at all. Non-overlap is
+    enforced greedily (best score first, skip anything sharing an hour
+    with an already-picked window) so two windows that are really "the
+    same" opportunity shifted by an hour don't crowd out genuine
+    variety."""
+    sun_times = _sun_times_by_date(days_data)
     scored = []
     for start_idx in range(len(timeline) - window_hours + 1):
-        window_end = timeline[start_idx]["dt"] + timedelta(hours=window_hours)
+        window_start = timeline[start_idx]["dt"]
+        window_end = window_start + timedelta(hours=window_hours)
         if window_end <= now_local:
+            continue
+        if _is_illegal_night_window(window_start, window_end, sun_times):
             continue
         s = score_window(timeline, start_idx, window_hours)
         if s is not None:
@@ -1856,7 +1904,7 @@ if submitted:
             if weather_samples:
                 timeline = build_hourly_timeline(days_data, weather_samples, tz, rut_peak)
                 now_local = datetime.now(tz).replace(tzinfo=None)
-                candidates = find_candidate_windows(timeline, now_local)
+                candidates = find_candidate_windows(timeline, now_local, days_data)
                 if candidates:
                     st.subheader(":dart: Best Hunting Windows")
                     st.caption(
@@ -2052,7 +2100,8 @@ if submitted:
             else:
                 st.warning(
                     "Couldn't fetch the weather forecast, so hunting-window "
-                    "ranking is unavailable right now - feeding times are still shown below."
+                    "ranking is unavailable right now - the solunar and sunrise/sunset "
+                    "times are still shown below."
                 )
 
             for day in days_data:
@@ -2081,34 +2130,27 @@ st.caption(
 
 with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     st.markdown(
-        f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window, scored by the "
-        "formula below."
-    )
-
-    st.markdown("### Where the weights come from")
-    st.markdown(
-        "The weights are **not** hand-tuned. Each one is expressed in the unit the "
-        "underlying GPS-collar research measured it in - yards per hour (yph) of excess "
-        "daytime buck movement - and a window's score is the **mean** excess yph across "
-        "its hours, converted to points by one shared constant:"
+        f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window. Every effect is "
+        "kept in the unit the research measured it in - **yards per hour (yph) of "
+        "excess daytime buck movement** - and a window's score is the mean excess yph "
+        "across its hours:"
     )
     st.latex(
-        r"\text{score} = k \cdot \frac{1}{H}\sum_{h=1}^{H} \text{(excess yph in hour } h)"
+        r"\text{score} = \underbrace{\text{activity}}_{\text{dawn/dusk} + \text{solunar}}"
+        r" + \underbrace{\text{rut}}_{\text{per day}}"
+        r" + \underbrace{(\text{cold} + \text{pressure} - \text{penalty}) \cdot d}_{\text{weather}}"
         r", \qquad k = \frac{3.0}{142} \approx " + f"{POINTS_PER_YPH:.4f}"
     )
     st.markdown(
-        "Averaging rather than summing is what makes effects of different *durations* "
-        "comparable. Rut elevates movement across every hour of a window; dawn/dusk "
-        "elevates roughly two of six. At equal yph the all-hours effect really is worth "
-        "3x the two-hour one, and that only falls out if both are averaged over the same "
-        "window."
+        "$k$ is anchored so peak rut - the largest measured effect, +142 yph - is worth "
+        "3.0 points; $d$ damps weather at dawn and dusk (term 6). **No activity weight "
+        "here is hand-tuned.**"
     )
+
+    st.markdown("### The measured weights")
     st.markdown(
-        "$k$ is anchored so that peak rut - the largest effect in the source data, "
-        "+142 yph - is worth 3.0 points. Effect sizes are from **Neary et al. (2025)**, "
-        "which GPS-collared 48 bucks in central Mississippi at 15-minute fixes from "
-        "September through February over two years and reported every result as a change "
-        "in daytime yards-per-hour against a **269 yph season mean**:\n\n"
+        "All from **Neary et al. 2025** (48 GPS-collared bucks, central Mississippi, "
+        "Sept-Feb, 2 years), against a **269 yph season mean**:\n\n"
         "| Effect | Measured | Points |\n"
         "|---|---|---|\n"
         f"| Peak rut | +142 yph | {142 * POINTS_PER_YPH:.2f} |\n"
@@ -2122,265 +2164,141 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         f"**{MAJOR_YPH * POINTS_PER_YPH:.2f}** |\n"
         f"| **Solunar Minor** (moonrise/moonset) | **-0.1 yph** | "
         f"**{MINOR_YPH * POINTS_PER_YPH:.2f}** |\n"
-        f"| Outside the rut | -40 yph measured, scored as {NO_RUT_YPH * POINTS_PER_YPH:.2f} | "
+        f"| Outside the rut | -40 yph measured, floored at 0 | "
         f"{NO_RUT_YPH * POINTS_PER_YPH:.2f} |\n\n"
-        "The rightmost column is the effect at its own rate; what a term actually "
-        "contributes to a window also depends on how many of the window's hours it "
-        "covers (a dawn band covers ~2 of 6, so it adds ~"
-        f"{CREPUSCULAR_YPH * 2 / WINDOW_HOURS * POINTS_PER_YPH:.2f}).\n\n"
-        "**Outside the rut is floored at zero, not scored at its measured -40 yph.** "
-        "That -40 is a delta against a season mean that the rut days themselves pull "
-        "up, so scoring every non-rut day against it would subtract points from most "
-        "of the season just for not being the rut. This app ranks windows within a "
-        "short forecast rather than against the whole season, so a day with no "
-        "measured rut elevation is neutral, not a deficit.\n\n"
-        "That ordering is the single most important thing on this page: **rut phase and "
-        "dawn/dusk dominate; the solunar periods this app is named after are, measured "
-        "against a buck's own usual movement at the same time of day, indistinguishable "
-        "from zero.** They're still computed and displayed, but they barely move the "
-        "ranking, because that's what the measurements support."
+        "Points are the effect at its own rate; what it adds to a window also depends "
+        "on how many hours it covers - a dawn band covers ~2 of 6, so it contributes "
+        f"~{CREPUSCULAR_YPH * 2 / WINDOW_HOURS * POINTS_PER_YPH:.2f}.\n\n"
+        "**Rut phase and dawn/dusk dominate; solunar major and minor are "
+        "indistinguishable from zero.** They're computed and shown because hunters ask "
+        "for them, not because they move the ranking."
     )
 
-    st.markdown("### The score")
-    st.latex(
-        r"\text{score} = \underbrace{\text{activity}}_{\text{dawn/dusk} + \text{solunar}}"
-        r" + \underbrace{\text{rut}}_{\text{per day}}"
-        r" + \underbrace{(\text{cold} + \text{pressure} - \text{penalty}) \cdot d}_{\text{weather}}"
-    )
+    st.markdown("### The six terms")
     st.markdown(
-        "$d$ is the dawn/dusk damping factor applied to every weather term - see step 6."
-    )
-
-    st.markdown("**1. Daily activity** - every hour $h$ in the window contributes:")
-    st.latex(
-        r"\text{activity} = \frac{k}{H} \sum_{h} \sum_{e}\ y_e \cdot o_{h,e}"
-    )
-    st.markdown(
-        f"$y_e$ is event type $e$'s measured yph effect and $o_{{h,e}}$ the fraction of "
-        f"hour $h$ that event's band covers. Bands: Major +/-60 min, Minor +/-30 min, "
-        f"sunrise/sunset +/-60 min (matching how Neary et al. defined \"within an hour of\" "
-        f"dawn and dusk)."
-    )
-
-    st.markdown(
-        "**2. Rut phase** - a per-day level that applies to every hour of the window. "
-        "Phases are 14-day bands around the peak breeding date you enter:"
-    )
-    st.markdown(
-        "| Phase | Days from peak |\n|---|---|\n"
-        + "\n".join(
-            f"| {label} | {start:+d} to {end:+d} |"
-            for label, start, end, _ in RUT_PHASE_YPH
-        )
-        + "\n| Outside rut | beyond +/-35 (scored as 0, not a penalty) |\n\n"
-        "**Peak rut date is regionally specific and not a clean function of latitude**, "
-        "which is why this app asks rather than computes it: Pennsylvania peaks "
-        "mid-November with half of does bred by Nov 13 (PA Game Commission fetal "
-        "aging; Penn State Deer-Forest Study), southwest Wisconsin Oct 23-Nov 12 "
-        "(Hunsaker et al. 2025) *despite being further north*, and central Mississippi "
-        "Dec 25 (Neary et al. 2025). If your state wildlife agency publishes conception "
-        "data, use it. Note also that these are **buck** movement rates."
+        "| # | Term | How it's scored | Basis |\n"
+        "|---|---|---|---|\n"
+        "| 1 | **Daily activity** | Dawn/dusk (+/-60 min), solunar Major (+/-60 min) "
+        "and Minor (+/-30 min), overlap-weighted per hour at the yph above | "
+        "**Measured** - Neary et al. 2025 |\n"
+        "| 2 | **Rut phase** | 14-day bands around the peak date you enter, applied to "
+        "every hour of the window | **Measured** - Neary et al. 2025 (timing is yours "
+        "to supply) |\n"
+        f"| 3 | **Cold** | Degrees F below this location's own trailing "
+        f"{PAST_DAYS_LOOKBACK}-day normal *for that hour of day*, ramping to "
+        f"{COLD_MAX_YPH:.0f} yph at {COLD_ANOMALY_SCALE:.0f} below | "
+        "**Judgment call** - temperature drove 5 of the 8 significant weather models "
+        "in Webb et al. 2010, more than any other variable |\n"
+        f"| 4 | **Rain/wind** | Subtracted: rain to -{PRECIP_MAX_PENALTY_YPH:.0f} yph "
+        f"at 100% chance; wind to -{WIND_MAX_PENALTY_YPH:.0f} yph above "
+        f"{WIND_PENALTY_THRESHOLD_MPH:.0f} mph, maxing at "
+        f"{WIND_PENALTY_FULL_MPH:.0f} | **Judgment call** - 1 of those 8 models each "
+        "(Webb et al. 2010); the Penn State Deer-Forest Study's two storm years "
+        "disagree on direction |\n"
+        f"| 5 | **Pressure** | {PRESSURE_DROP_YPH:.0f} yph "
+        f"({PRESSURE_DROP_MINOR_YPH:.1f} for a smaller fall) on a falling 24-hour "
+        f"trend; the {PRESSURE_BAND_LOW_IN}-{PRESSURE_BAND_HIGH_IN} inHg \"sweet spot\" "
+        "band is reported but scores **zero** | **Near-token** - Penn State found no "
+        "significant storm effect; pressure was the one variable of five in Webb et "
+        "al. 2010 with no within-day trend |\n"
+        f"| 6 | **Dawn/dusk damping** | Terms 3-5 scaled by "
+        f"$1 - {WEATHER_CREPUSCULAR_DAMPING} \\times$ (fraction of the hour inside a "
+        "sunrise/sunset halo) | **Two studies** - Goethlich 2019 and Webb et al. 2010 "
+        "found weather effects concentrate in non-peak hours; Hunsaker et al. 2025 "
+        "found none at all during the rut |\n\n"
+        "Terms 3-5 are bounded judgment calls: no located study reports weather as a "
+        "movement *rate*, so each is capped at one dawn's worth of contribution."
     )
 
     st.markdown(
-        "**3. Cold** - measured as a departure below this location's own recent normal "
-        "**for that hour of day**, not against a fixed degree threshold (38°F means "
-        "something very different in Maine than in Georgia, and deer respond to change "
-        "from what they're acclimated to):"
-    )
-    st.latex(
-        r"\text{cold}_h = Y_{\text{cold}} \cdot "
-        r"\text{clamp}\big(\tfrac{\Delta T_h}{S},\ 0,\ 1\big)"
-    )
-    st.markdown(
-        f"$\\Delta T$ is how many °F below normal an hour runs, where \"normal\" is "
-        f"the mean of the last {PAST_DAYS_LOOKBACK} days of observations at the same hour "
-        f"of day; $S = {COLD_ANOMALY_SCALE:.0f}$°F and "
-        f"$Y_{{\\text{{cold}}}} = {COLD_MAX_YPH:.0f}$ yph (max "
-        f"{COLD_MAX_YPH * POINTS_PER_YPH:.2f} points). Like every weather term it is "
-        f"evaluated hour by hour and averaged over the window.\n\n"
-        f"Temperature is the one weather variable with consistent support - Webb et al. "
-        f"(2010) found weather mattered in only 8 of 80 models (10%), and temperature "
-        f"accounted for 5 of those 8, more than any other variable. No study publishes a "
-        f"movement-rate effect size for it, so $Y_{{\\text{{cold}}}}$ is a bounded "
-        f"judgment call: it's set so that a full cold anomaly, applied across every hour, "
-        f"contributes about as much to a window as a single dawn or dusk does."
-    )
-
-    st.markdown("**4. Rain/wind penalty** - subtracted:")
-    st.latex(
-        r"\text{penalty}_h = Y_{\text{rain}} \tfrac{p_h}{100}"
-        r" + Y_{\text{wind}}\,\text{clamp}\big(\tfrac{v_h - v_0}{v_1 - v_0},\ 0,\ 1\big)"
-    )
-    st.markdown(
-        f"$p_h$ is the hour's precipitation chance (%) and $v_h$ its wind speed (mph); "
-        f"$Y_{{\\text{{rain}}}} = {PRECIP_MAX_PENALTY_YPH:.0f}$ yph, "
-        f"$Y_{{\\text{{wind}}}} = {WIND_MAX_PENALTY_YPH:.0f}$ yph, "
-        f"$v_0 = {WIND_PENALTY_THRESHOLD_MPH:.0f}$, $v_1 = {WIND_PENALTY_FULL_MPH:.0f}$ mph.\n\n"
-        f"Rain and wind sit at the same tier - half the cold ceiling - because they have "
-        f"the same evidential standing: each was significant in exactly 1 of Webb et al. "
-        f"(2010)'s 8 significant weather models. An earlier version gave rain the full "
-        f"ceiling on the strength of the Penn State Deer-Forest Study's storm analysis "
-        f"(30 storms, 52,279 GPS locations) \"finding deer moved less during storms\"; on "
-        f"re-reading, its two years point in opposite directions (2016: 102 yph outside "
-        f"storms vs 113 during; 2017: 111 vs 98) and it concludes there was no significant "
-        f"effect, so it supports neither the size nor the direction of a rain penalty. "
-        f"The direction is a judgment call. Wind doesn't engage at all below "
-        f"{WIND_PENALTY_THRESHOLD_MPH:.0f} mph."
+        "**Peak rut is regional, not a function of latitude**, which is why this app "
+        "asks for it: Pennsylvania peaks mid-November (PA Game Commission), southwest "
+        "Wisconsin Oct 23-Nov 12 *despite being further north* (Hunsaker et al. 2025), "
+        "central Mississippi Dec 25 (Neary et al. 2025). Use your state agency's "
+        "conception data if they publish it. These are **buck** movement rates."
     )
 
     st.markdown(
-        "**5. Pressure** - deliberately downweighted to near-token size, and split by "
-        "what the evidence can actually distinguish: a *change* in pressure (a two-tier "
-        "bonus for a falling 24-hour trend) versus a static *level* (the traditional "
-        "\"sweet spot\" band, which now carries **zero** weight):"
-    )
-    st.latex(
-        r"\text{pressure}_h = \underbrace{Y_{\text{band}}\,"
-        r"\mathbb{1}[P_{\text{low}} \le P_h \le P_{\text{high}}]}_{\text{band}}"
-        r" + \underbrace{\begin{cases}"
-        r"Y_{\text{drop}} & \Delta P_h \ge \Delta P_{\text{min}} \\"
-        r"Y_{\text{drop,minor}} & \Delta P_{\text{minor}} \le \Delta P_h < \Delta P_{\text{min}} \\"
-        r"0 & \text{otherwise}"
-        r"\end{cases}}_{\text{falling}}"
-    )
-    st.markdown(
-        f"$P_h$ is the hour's sea-level pressure (inHg) and $\\Delta P_h$ the fall over "
-        f"the {PRESSURE_DROP_LOOKBACK_HOURS} hours before it; "
-        f"$P_{{\\text{{low}}}} = {PRESSURE_BAND_LOW_IN}$, "
-        f"$P_{{\\text{{high}}}} = {PRESSURE_BAND_HIGH_IN}$, "
-        f"$Y_{{\\text{{band}}}} = {PRESSURE_BAND_YPH:.0f}$ yph, "
-        f"$\\Delta P_{{\\text{{minor}}}} = {PRESSURE_DROP_MINOR_THRESHOLD_IN}$, "
-        f"$Y_{{\\text{{drop,minor}}}} = {PRESSURE_DROP_MINOR_YPH:.0f}$ yph, "
-        f"$\\Delta P_{{\\text{{min}}}} = {PRESSURE_DROP_THRESHOLD_IN}$, "
-        f"$Y_{{\\text{{drop}}}} = {PRESSURE_DROP_YPH:.0f}$ yph "
-        f"(so at most {(PRESSURE_BAND_YPH + PRESSURE_DROP_YPH) * POINTS_PER_YPH:.2f} "
-        f"points).\n\n"
-        "**Why so small?** The Penn State Deer-Forest Study found *no statistical or "
-        "biological significance* of oncoming storms on collared deer - their before / "
-        "during / after / control hourly movement rates all sit within roughly 94-113 yph "
-        "of each other, and the two study years disagree on direction. Webb et al. (2010) "
-        "found pressure was the only one of five weather variables with no within-day "
-        "linear trend at all. Falling pressure keeps a token weight because a separate "
-        "Webb et al. analysis of day-over-day weather *changes* attributed 3 of 10 "
-        "significant models to pressure, and Goethlich (2019) found pressure affected "
-        "activity in some seasons and times of day - small-and-unproven rather than "
-        "disproven. Its size is half the roughly +/-10 yph spread across the Penn State "
-        "conditions, which is itself an upper bound on an effect that study could not "
-        "detect.\n\n"
-        "The 29.8-30.3 inHg \"sweet spot\" band, by contrast, traces to a hunting-magazine "
-        "rule of thumb, and no located study tests a static pressure *level* at all. It "
-        "is still reported in the window text for hunters who track it, but it no longer "
-        "moves the score."
-    )
-
-    st.markdown(
-        "**6. Dawn/dusk damping** - every weather term above is evaluated per hour and "
-        "then scaled down inside the sunrise/sunset halos:"
-    )
-    st.latex(
-        r"\text{weather} = \frac{k}{H}\sum_h (\text{cold}_h + \text{pressure}_h - "
-        r"\text{penalty}_h)\,(1 - D \cdot c_h)"
-    )
-    st.markdown(
-        f"$c_h$ is the fraction of hour $h$ inside a dawn or dusk halo (0-1) and "
-        f"$D = {WEATHER_CREPUSCULAR_DAMPING}$, so an hour fully at dawn carries half the "
-        f"weather weight of a midday hour.\n\n"
-        "Two studies independently found that weather effects concentrate in *non-peak* "
-        "hours: Goethlich (2019; 116 collared deer, South Carolina) was \"most likely to "
-        "see a significant relationship between abiotic factors and activity during "
-        "daytime and nighttime and least likely to see an effect in the morning and "
-        "evening\", and Webb et al. (2010)'s weather effects surfaced at 0100-0200 and "
-        "1300 - \"hours of limited movements\" - not at dawn or dusk. Hunsaker et al. "
-        "(2025; 188 bucks, Wisconsin) found no weather effect at all on rut-period "
-        "movement. The size of $D$ is a judgment call: the sources say \"least likely\" "
-        "and \"less pronounced\", not \"absent\".\n\n"
-        "A final sanity check on the whole weather block: Webb et al. (2010)'s weather "
-        "parameter estimates never exceeded ~29 m/h (~32 yph), and the authors attribute "
-        "even that partly to collar error. The most this block can move a window is "
-        f"about +{COLD_MAX_YPH + PRESSURE_BAND_YPH + PRESSURE_DROP_YPH:.0f} / "
-        f"-{PRECIP_MAX_PENALTY_YPH + WIND_MAX_PENALTY_YPH:.0f} yph, inside that bound."
-    )
-
-    st.markdown("### Window search and chart colors")
-    st.markdown(
-        f"The top {CANDIDATE_WINDOW_COUNT} highest-scoring windows are found by sliding "
-        f"this {WINDOW_HOURS}-hour window across every possible starting hour in the "
-        "forecast, keeping only non-overlapping windows (best score wins any overlap) so "
-        "the results represent genuinely different opportunities rather than the same "
-        "window shifted by an hour.\n\n"
-        f"| Chart color | Terms it contains | Can it be negative? |\n"
-        f"|---|---|---|\n"
-        f"| **{CATEGORY_RUT}** | 2 | No - floored at zero outside the rut |\n"
-        f"| **{CATEGORY_ACTIVITY}** | 1 (dawn/dusk + solunar) | No |\n"
-        f"| **{CATEGORY_WEATHER}** | (3 + 5 - 4) x 6 | Yes - a wet, windy window pulls its "
-        f"bar below zero |\n\n"
-        f"Bonuses stack above the zero line and penalties hang below it, so a bar's "
-        f"height is not its score; the diamond on each bar marks the net total (the three "
-        f"segments summed), which is what the ranking uses."
+        f"**Reading the chart.** The top {CANDIDATE_WINDOW_COUNT} non-overlapping "
+        "windows are shown (best score wins any overlap). Bonuses stack above the zero "
+        "line and penalties hang below, so a bar's height is not its score - the "
+        f"diamond marks the net total the ranking uses. {CATEGORY_RUT} and "
+        f"{CATEGORY_ACTIVITY} never go negative; {CATEGORY_WEATHER} can."
     )
 
     st.markdown("### Sources")
     st.caption(
-        "Every citation below was verified against the published source. README.md "
-        "carries the full write-up, including what each source contributes and where "
-        "sources disagree with this model."
+        "Every citation below was verified against the published source. The full "
+        "write-up - how each constant was derived, where sources disagree with this "
+        "model, the county rut-date lookups and the model's known gaps - is in "
+        "[litreview.md](https://github.com/kendallhamm/huntcast/blob/master/litreview.md)."
     )
     st.markdown(
         "- **Neary, N., B. Strickland, L. Resop, S. Demarais, and W. McKinley. 2025.** "
         "*Lunar Legends: Does the Moon Influence Buck Activity?* Mississippi State "
-        "University Extension Publication 4068. — supplies **every activity weight in "
+        "University Extension Publication 4068. - supplies **every activity weight in "
         "this model**: the 269 yph season baseline, the +48 yph dawn/dusk effect, the "
         "+3 / -0.1 yph solunar major/minor effects, and the full rut-phase yph ladder. "
         "48 GPS-collared bucks, central Mississippi, 15-min fixes, Sept-Feb, 2 years.\n"
         "- **Webb, S.L., K.L. Gee, B.K. Strickland, S. Demarais, and R.W. DeYoung. 2010.** "
         "*Measuring Fine-Scale White-Tailed Deer Movements and Environmental Influences "
-        "Using GPS Collars.* International Journal of Ecology 2010:1-12. — 32 deer, 7 "
-        "years of 15-minute fixes in Oklahoma. Source for *\"general linear trends in "
-        "movements related to 4 of the 5 weather variables in only 8 of 80 (10%) models... "
-        "Temperature influenced movements in 5 of 8 cases\"* - note that leaves "
-        "**pressure as the one variable of five with no linear trend**. Also the null "
-        "moon-phase result and the finding that crepuscular movement is the dominant "
-        "driver.\n"
-        "- **Penn State Deer-Forest Study.** *Spidey Sense* (deer.psu.edu) — 30 storm "
+        "Using GPS Collars.* International Journal of Ecology 2010:1-12. - 32 deer, 7 "
+        "years of 15-minute fixes in Oklahoma. Source for the weather tiering (4 of 5 "
+        "variables mattered in only 8 of 80 models; temperature in 5 of those 8, leaving "
+        "**pressure the one variable with no linear trend**), the null moon-phase "
+        "result, and the finding that crepuscular movement is the dominant driver.\n"
+        "- **Penn State Deer-Forest Study.** *Spidey Sense* (deer.psu.edu) - 30 storm "
         "events, 52,279 GPS locations, 4-8 collared does, 2016-17; source for the null "
         "storm/pressure result (\"no statistical or biological significance\") and the "
-        "~94-113 yph before/during/after/control spread the falling-pressure term is "
-        "pinned under. Its two years disagree on whether deer moved more or less during "
-        "storms, which is why it no longer backs the rain penalty. (Research-project blog, "
-        "not peer-reviewed.)\n"
-        "- **Pennsylvania Game Commission.** *When is the rut?* — fetal measurements from "
+        "~94-113 yph spread the falling-pressure term is pinned under. Its two years "
+        "disagree on whether deer moved more or less during storms, so it doesn't "
+        "establish the rain penalty's direction. (Research-project blog, not "
+        "peer-reviewed.)\n"
+        "- **Pennsylvania Game Commission.** *When is the rut?* - fetal measurements from "
         "6,000+ road-killed does, 2000-2007; peak breeding by adult does in "
-        "**mid-November**, which is where the Nov 15 default comes from. The Penn State "
-        "Deer-Forest Study, from the same data, puts half of does bred by Nov 13.\n"
+        "**mid-November**, which is where the Nov 15 default comes from.\n"
+        "- **Cheatum, E.L. and G.H. Morton. 1946.** *Breeding Season of White-Tailed "
+        "Deer in New York.* Journal of Wildlife Management 10(3):249-263, at p. 258. - "
+        "source for the **New York** dates in the rut lookup (northern NY Nov 13, "
+        "southern NY Nov 20). New York is the one state shown by *region* rather than "
+        "county, because a north/south contrast is the scale this source works at. At "
+        "1946 it is by some margin the oldest source used here; estrus timing is "
+        "photoperiod-driven so the dates should be stable, but they have not been "
+        "re-derived from modern New York data.\n"
         "- **Sullivan, J.D., S.S. Ditchkoff, B.A. Collier, C.R. Ruth, and J.B. Raglin. "
         "2016.** *Movement with the moon: white-tailed deer activity and solunar events.* "
-        "Journal of the SEAFWA 3:225-232. — 38 bucks, Brosnan Forest, South Carolina. Near a new/full "
-        "moon, **minor**-period activity rose (0.384->0.564 at moonrise) while "
-        "**major**-period activity *fell* (0.540->0.413 overhead). Concluded solunar "
-        "charts \"may be misleading\".\n"
+        "Journal of the SEAFWA 3:225-232. - 38 bucks, Brosnan Forest, South Carolina. "
+        "Near a new/full moon, **minor**-period activity rose (0.384->0.564 at moonrise) "
+        "while **major**-period activity *fell* (0.540->0.413 overhead). Concluded "
+        "solunar charts \"may be misleading\".\n"
         "- **Swartout, T.J., and S.S. Ditchkoff. 2025.** *Are Solunar Charts as "
-        "Predictable as They Claim?* Southeastern Naturalist 24(2):137-150. — 22 bucks, "
+        "Predictable as They Claim?* Southeastern Naturalist 24(2):137-150. - 22 bucks, "
         "high-fenced Alabama property. The strongest pro-solunar result found: top-rated "
         "days gave **3.02x / 2.83x** activity odds during moon underfoot/overhead, but "
         "only 0.30x / 0.37x at moonrise/moonset. Reported as odds, not movement rate, so "
-        "it could not be converted into this model's units - see README.\n"
+        "it could not be converted into this model's units - see litreview.md.\n"
         "- **Hunsaker, M.A., M.L.J. Gilbertson, D.J. Storm, and W.C. Turner. 2025.** *The "
         "Breeding Season and Movement Ecology of Male White-Tailed Deer in Southwest "
-        "Wisconsin.* Ecology and Evolution 15(7):e71589. — 188 collared males; source for "
+        "Wisconsin.* Ecology and Evolution 15(7):e71589. - 188 collared males; source for "
         "the Oct 23-Nov 12 Wisconsin peak-breeding window used to show that rut timing "
         "isn't a simple latitude function, and for the null result that weather, hunting "
         "season and opening firearm weekend had no significant effect on rut-period "
         "movement.\n"
         "- **Little, A.R., S.L. Webb, S. Demarais, K.L. Gee, S.K. Riffell, and J.A. "
         "Gaskamp. 2016.** *Hunting intensity alters movement behaviour of white-tailed "
-        "deer.* Basic and Applied Ecology 17:360-369. — 37 adult bucks, Oklahoma; "
+        "deer.* Basic and Applied Ecology 17:360-369. - 37 adult bucks, Oklahoma; "
         "hunting pressure as a real movement driver; a known gap this model does not "
-        "attempt (see README).\n"
+        "attempt (see litreview.md).\n"
         "- **Goethlich, J. 2019.** *Effects of Abiotic Factors on White-tailed Deer "
-        "Activity in South Carolina.* M.S. thesis, Auburn University. — 116 collared "
+        "Activity in South Carolina.* M.S. thesis, Auburn University. - 116 collared "
         "deer, 2009-2018: responses to abiotic factors were *\"typically less pronounced "
         "than circadian fluctuations in activity, and occurred most often during non-peak "
         "times of activity.\"* The basis, with Webb et al. 2010, for damping the weather "
-        "terms at dawn and dusk (step 6)."
+        "terms at dawn and dusk (term 6).\n\n"
+        "Also used for the state rut-date lookup and documented in litreview.md: "
+        "**NC Wildlife Resources Commission 2025** (100-county peak conception), "
+        "**Georgia DNR WRD** (159-county peak movement), **Texas Parks and Wildlife** "
+        "(16 ecoregions), **Green et al. 2017** (Illinois statewide), and the "
+        "**Louisiana DWF**, **Mississippi MDWFP** and **South Carolina DNR** contour "
+        "maps."
     )
