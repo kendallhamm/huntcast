@@ -1900,12 +1900,17 @@ if submitted:
                     category_colors = ["#1baf7a", "#2a78d6", "#eb6834"]
                     surface, ink = _chart_theme()
 
+                    # The axis label is day + time only (no rank number) so
+                    # it reads as a plain left-to-right timeline; rank is
+                    # still available in the tooltip and in the top-3 list
+                    # above the chart, and doesn't need to march 1,2,3... in
+                    # this order since the bars are sorted by time, not rank.
                     window_labels = []
                     breakdown_rows = []
                     net_rows = []
                     for i, (score, start_idx) in ranked_by_time:
                         label = (
-                            f"#{i} {_label_for_date(timeline[start_idx]['dt'].date(), today_date)} "
+                            f"{_label_for_date(timeline[start_idx]['dt'].date(), today_date)}\n"
                             f"{_format_time(timeline[start_idx]['dt'])}"
                         )
                         window_labels.append(label)
@@ -1917,6 +1922,7 @@ if submitted:
                                 "CategoryRank": rank,
                                 "Score": round(breakdown[category], 2),
                                 "Net": round(breakdown["total"], 2),
+                                "Rank": i,
                             })
                         net_rows.append({
                             "Window": label,
@@ -1931,7 +1937,11 @@ if submitted:
 
                     x_axis = alt.X(
                         "Window:N", sort=window_labels, title=None,
-                        axis=alt.Axis(labelAngle=-40),
+                        # labelOverlap off forces every column to keep its
+                        # label - the default hides some when 15 bars are
+                        # this tightly packed, which is what made the order
+                        # look scrambled.
+                        axis=alt.Axis(labelAngle=0, labelOverlap=False, labelBaseline="top"),
                     )
                     # A stroke in the surface color puts a 2px gap between
                     # touching segments (and between the bar and the axis),
@@ -1950,6 +1960,7 @@ if submitted:
                         order=alt.Order("CategoryRank:Q"),
                         tooltip=[
                             alt.Tooltip("Window:N"),
+                            alt.Tooltip("Rank:Q", title="Rank by score"),
                             alt.Tooltip("Category:N"),
                             alt.Tooltip("Score:Q", format="+.2f", title="This term"),
                             alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
