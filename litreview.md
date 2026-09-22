@@ -55,6 +55,50 @@ window; dawn/dusk elevates roughly two hours of six. At equal yph the
 all-hours effect genuinely is worth 3× the two-hour one, and that only
 falls out correctly if both are averaged over the same window.
 
+### Adding the terms is itself an assumption
+
+The model scores a window by **adding** the rut term, the daily-activity
+term and the weather term. Nothing measures that combination rule. It is
+a modelling choice, and it is the one place where "no weight in this
+model is hand-tuned" needs qualifying: the *constants* are all measured,
+the *arithmetic joining them* is not.
+
+The specific difficulty is that Neary et al.'s effect sizes are
+**marginal means against a shared baseline, computed over overlapping
+subsets of the same data**:
+
+- The +48 yph crepuscular figure is averaged across the whole September
+  to February season, which includes the rut days.
+- The +142 yph peak-rut figure is averaged across all daytime hours of
+  the peak-rut band, which includes that band's own dawn and dusk hours.
+
+Both are deviations from the same 269 yph season mean, so adding them
+predicts a dawn hour during peak rut at 269 + 142 + 48 = 459 yph. Nothing
+in the publication tests that cell. Marginal means add cleanly only if
+the effects are additive on this scale *and* each marginal already equals
+its partial effect - neither of which an extension publication reporting
+group means can establish.
+
+If the structure is instead multiplicative - dawn scaling the prevailing
+rate rather than adding a fixed amount to it - then dawn during peak rut
+is worth about 411 x (317/269) - 411 = **+73 yph, not +48**, and this
+model understates dawn during the rut relative to dawn outside it.
+
+**Why it is kept anyway.** Fitting a joint model needs the raw collar
+fixes, which are not published; marginal means are what the source makes
+available. And the damage to the *ranking* is bounded. The rut term is a
+per-day level, identical for every window on a given day, so any
+misallocation between the rut and dawn/dusk terms cancels exactly when
+ranking windows *within* a day. It can move the ranking only across days
+in different rut phases, and then by re-weighting dawn against weather
+rather than by reordering dawn against midday.
+
+**What would settle it.** Not another literature search. A validation
+set: scoring a season of trail-camera timestamps or a sightings log
+against the model would test the combination rule and the constants
+together, which is the check this project has never run. See "Known gaps
+and limitations".
+
 ### The measured weight ladder
 
 All effect sizes below are from **Neary et al. 2025**, against a **269
@@ -88,7 +132,7 @@ neutral rather than as a deficit.
 | # | Term | Basis |
 |---|---|---|
 | 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. **Measured.** |
-| 2 | **Rut phase** | 14-day bands around a user-supplied peak breeding date, at the measured yph above. **Measured** (effect size); **user-supplied** (timing). |
+| 2 | **Rut phase** | Five measured levels anchored 14 days apart around a user-supplied peak breeding date, interpolated between so the ladder is continuous in day offset. **Measured** (effect size); **user-supplied** (timing). |
 | 3 | **Cold** | Degrees below this location's own recent normal *for that hour of day*, ramping to 16 yph at 15°F below normal. **Judgment call, bounded.** |
 | 4 | **Rain/wind penalty** | Rain to -8 yph at 100% chance; wind to -8 yph, engaging only above 15 mph and maxing at 40 mph. **Judgment call, bounded.** |
 | 5 | **Pressure** | 5 yph (or 2.5) for a falling 24-hour trend. The 29.8-30.3 inHg "sweet spot" band is still reported in the window text but carries **zero** weight. **Folklore, near-token.** |
@@ -122,11 +166,22 @@ ordering:
   linear trend. The constant stays in the code at 0 so it is a single
   number to raise if evidence appears.
 - **Every weather term is damped by half inside dawn/dusk halos.**
-  Goethlich 2019 and Webb et al. 2010 independently found weather effects
-  concentrate in non-peak hours; Hunsaker et al. 2025 found no weather
-  effect at all on rut-period movement. The sources say "least likely"
-  and "less pronounced", not "absent", so the damping is 0.5 rather than
-  1.0.
+  **Two** studies support this: Goethlich 2019 and Webb et al. 2010
+  independently found weather effects concentrate in non-peak hours. The
+  sources say "least likely" and "less pronounced", not "absent", so the
+  damping is 0.5 rather than 1.0.
+- **Audit note - Hunsaker does not support the dawn/dusk damping.** An
+  earlier version of this list, and the code comment on
+  `WEATHER_CREPUSCULAR_DAMPING`, cited Hunsaker et al. 2025's "no weather
+  effect at all on rut-period movement" alongside Goethlich and Webb as
+  though it were a third vote for damping weather at dawn and dusk. It is
+  not. Hunsaker's finding is about the **calendar** (the rut period), not
+  the **time of day**; it is evidence for a rut-phase weather damping
+  that this model does not implement. The finding is real and still
+  counts toward keeping the weather block small overall - it is simply
+  attached to the wrong term. Downweighted to two supporting studies
+  rather than removed, so the rut-phase reading stays on the record as a
+  candidate term.
 - **Sanity bound on the whole block:** Webb et al. 2010's weather
   parameter estimates never exceeded ~29 m/h (~32 yph), and the authors
   attribute even that partly to collar error. The most this block can
@@ -167,17 +222,45 @@ et al. 2025 defined "within an hour of" dawn and dusk, which is the
 definition their +48 yph figure was measured under.
 
 **2. Rut phase.** A per-day level applied to every hour of the window.
-Phases are 14-day bands around the user-supplied peak breeding date
-(`RUT_PHASE_YPH`):
+The five measured phases are anchored at day offsets spaced
+`RUT_BAND_DAYS = 14` apart around the user-supplied peak breeding date
+(`RUT_PHASE_YPH`), and `rut_phase()` linearly **interpolates** between
+those anchors:
 
-| Phase | Days from peak | yph |
+| Anchor | Days from peak | yph |
 |---|---|---|
-| Pre-rut | −35 to −21 | +4 |
-| Early rut | −21 to −7 | +104 |
-| Peak rut | −7 to +7 | +142 |
-| Late rut | +7 to +21 | +78 |
-| Post-rut | +21 to +35 | +9 |
-| Outside rut | beyond ±35 | 0 (`NO_RUT_YPH`, floored — see above) |
+| Outside rut | -42 and earlier | 0 (`NO_RUT_YPH`, floored - see above) |
+| Pre-rut | -28 | +4 |
+| Early rut | -14 | +104 |
+| Peak rut | 0 | +142 |
+| Late rut | +14 | +78 |
+| Post-rut | +28 | +9 |
+| Outside rut | +42 and later | 0 |
+
+The *label* a day carries is still its band membership - the 14-day band
+centered on each anchor - so days are named exactly as before and only
+their size is interpolated. Between the outermost named band and the
+no-rut anchor a day reads "Outside rut" while still carrying the tail of
+the ramp.
+
+**Why interpolated rather than stepped.** The step ladder put a 38 yph
+cliff between two adjacent calendar days at every band boundary: offset
+-8 scored early rut's 104, offset -7 scored peak rut's 142. That is 0.80
+points - more than twice the entire dawn/dusk term (0.34), and more than
+the whole weather block can produce at full strength - triggered by a
+one-day change in a date the user is estimating from a state agency
+average. Interpolating drops the largest adjacent-day step to 7.1 yph
+(0.15 points). The rut is a continuous process; 14-day bands are how the
+study reported it, not how it happens.
+
+**What interpolating costs.** It preserves each measured value exactly at
+its anchor and lowers the days between anchors relative to the old
+plateau, so peak rut becomes a tent with a one-day apex rather than a
+14-day shelf. Read strictly, Neary et al.'s 142 is the *mean over* a
+14-day band, and preserving that mean under a tent would require an apex
+*above* 142 - a number no study reports. Anchoring the measured value at
+the band center and interpolating down is the conservative reading, and
+is the one taken here.
 
 **3. Cold.**
 
@@ -848,6 +931,22 @@ The second research pass looked specifically for, and did not find:
   because temperatures are genuinely declining. This inflates the cold
   term roughly equally across all windows, so it largely cancels out of
   the *ranking*, but absolute scores in fall run slightly high.
+- **The terms are added, and nothing tests that they should be.** See
+  "Adding the terms is itself an assumption" above. Every constant is
+  measured; the rule that combines them into a score is a modelling
+  choice, and the two largest constants are marginal means over
+  overlapping subsets of one data set.
+- **Nothing here has been validated against an outcome.** Every constant
+  traces to a study, and the model has still never been scored against
+  harvest records, a sightings log or trail-camera timestamps. Auditable
+  is not the same as accurate. This is the largest open item in the
+  project - larger than any individual weight in it.
+- **A rut-phase weather damping is unbuilt.** Hunsaker et al. 2025 found
+  no weather effect on rut-period movement (see the audit note above).
+  Taken seriously that implies weather should be damped during the rut,
+  the way it already is at dawn and dusk. Not implemented, because one
+  study is thin ground for a second damping term and its interaction with
+  the existing one is untested.
 - **No diel curve.** The model gives a bonus at dawn/dusk but otherwise
   treats 2 AM and 2 PM identically, because the sources provide only two
   points (season mean and crepuscular mean), not a full activity curve.

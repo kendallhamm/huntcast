@@ -157,10 +157,17 @@ yph season mean. A term's actual contribution to a window also depends
 on how many of the window's hours it covers — a dawn band covers ~2 of
 6, so it adds ~0.34.
 
+Two things the table doesn't show. The rut figures are **anchor points,
+not plateaus**: each lands exactly on its named day and the days in
+between are interpolated, so no single day's slip in the user-supplied
+peak date can drop a score off a cliff. And the terms are **added
+together**, which is an assumption the source doesn't test - see
+[litreview.md](litreview.md#adding-the-terms-is-itself-an-assumption).
+
 | # | Term | Basis |
 |---|---|---|
 | 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. **Measured** (Neary et al. 2025). |
-| 2 | **Rut phase** | 14-day bands around a user-supplied peak breeding date, at the measured yph above. **Measured** effect size (Neary et al. 2025); **user-supplied** timing. |
+| 2 | **Rut phase** | Five measured levels anchored 14 days apart around a user-supplied peak breeding date and linearly interpolated between, so the ladder is continuous in day offset. **Measured** effect size (Neary et al. 2025); **user-supplied** timing. |
 | 3 | **Cold** | Degrees below this location's own recent normal *for that hour of day*, ramping to 16 yph at 15°F below. **Judgment call, bounded** (Webb et al. 2010). |
 | 4 | **Rain/wind penalty** | Rain to -8 yph at 100% chance; wind to -8 yph, engaging above 15 mph and maxing at 40. **Judgment call, bounded** (Webb et al. 2010; Penn State Deer-Forest Study). |
 | 5 | **Pressure** | 5 yph (or 2.5) for a falling 24-hour trend. The 29.8-30.3 inHg "sweet spot" band is reported in the window text but carries **zero** weight. **Near-token** (Penn State Deer-Forest Study; Webb et al. 2010). |

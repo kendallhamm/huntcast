@@ -343,7 +343,8 @@ MINOR_YPH = 0.0
 # al. 2025 (their "All data" series), keyed by day offset from peak
 # breeding. Neary et al. space their phases 14 days apart (Mississippi
 # pre-rut Nov 27 / early Dec 11 / peak Dec 25 / late Jan 8 / post Jan 22),
-# so each phase is treated as a 14-day band centered on its named day.
+# so each phase's measured yph is anchored to its named day and the days
+# between anchors are interpolated - see rut_phase().
 #
 # Caveat carried into the UI: these are *buck* movement rates, and the
 # phase offsets are relative to a peak breeding date the user supplies,
@@ -355,11 +356,17 @@ MINOR_YPH = 0.0
 # RUT_PEAK_DEFAULT_MONTH_DAY below.
 #
 # Stored as (label, band index, measured yph): band index counts phases
-# out from peak, so with the default RUT_BAND_DAYS = 14 the bands are
-# pre-rut [-35,-21), early [-21,-7), peak [-7,7), late [7,21) and post
-# [21,35) - exactly Neary et al.'s spacing. Keeping the index rather
-# than baked-in day offsets is what lets the band width be a dial in
-# custom mode; at the default it reproduces the published bands.
+# out from peak, so with the default RUT_BAND_DAYS = 14 the named days
+# are pre-rut -28, early -14, peak 0, late +14 and post +28 - exactly
+# Neary et al.'s spacing. Keeping the index rather than baked-in day
+# offsets is what lets the band width be a dial in custom mode.
+#
+# These are ANCHOR POINTS, not plateaus. rut_phase() interpolates
+# between them, so each measured yph lands exactly on its named day and
+# the days in between ramp smoothly. The band width still sets the
+# spacing of the anchors (and names each day's phase for display); what
+# it no longer does is hold a phase flat across 14 days and then drop
+# 38 yph overnight at the boundary. See rut_phase() for why.
 RUT_PHASE_YPH = [
     ("Pre-rut", -2, 4.0),
     ("Early rut", -1, 104.0),
@@ -1140,8 +1147,12 @@ WIND_MAX_PENALTY_YPH = WEATHER_BOUND_YPH / 2
 # daytime and nighttime and least likely to see an effect in the morning
 # and evening", and Webb et al. 2010's weather effects surfaced at
 # 0100-0200 and 1300 - "hours of limited movements" - not at dawn or
-# dusk. Hunsaker et al. 2025 (188 bucks, Wisconsin) found no weather
-# effect at all on rut-period movement. So every weather term above is
+# dusk. That is TWO studies, not three: Hunsaker et al. 2025's "no
+# weather effect at all on rut-period movement" used to be cited here as
+# a third, and it isn't one. Hunsaker's finding is about the CALENDAR,
+# not the time of day - it would justify a separate rut-phase weather
+# damping, which this model does not implement (see the audit note and
+# the known gap in litreview.md). So every weather term above is
 # multiplied by (1 - DAMPING x crepuscular coverage) hour by hour: an
 # hour fully inside a sunrise/sunset halo carries half weight, an hour
 # outside carries full weight. The size (0.5) is a judgment call - the
@@ -1322,14 +1333,15 @@ WEIGHT_SPECS = [
     ),
     WeightSpec(
         "rut_band_days", GROUP_RUT, SHAPE,
-        "Width of each rut phase", "days", 7.0, 28.0, 7.0, float(RUT_BAND_DAYS),
+        "Spacing between rut phases", "days", 7.0, 28.0, 7.0, float(RUT_BAND_DAYS),
         "14 days - the spacing Neary et al. use between phases",
         "Neary et al. space their phases 14 days apart (Mississippi pre-rut Nov 27 "
-        "/ early Dec 11 / peak Dec 25 / late Jan 8 / post Jan 22), so each phase is "
-        "treated as a 14-day band centered on its named day. Narrow this if you "
-        "think your herd's rut is sharper than Mississippi's; widen it if the peak "
-        "date you entered is a rough guess and you want the bonus to hedge across "
-        "more days.",
+        "/ early Dec 11 / peak Dec 25 / late Jan 8 / post Jan 22), so each phase's "
+        "measured yph is anchored to its named day and the days in between are "
+        "interpolated. Narrow this if you think your herd's rut is sharper than "
+        "Mississippi's; widen it if the peak date you entered is a rough guess and "
+        "you want the bonus to spread across more days. Either way the ladder stays "
+        "continuous - there is no day on which the score jumps.",
         "Neary et al. 2025",
     ),
     WeightSpec(
@@ -1462,15 +1474,13 @@ WEIGHT_SPECS = [
         "relationship between abiotic factors and activity during daytime and "
         "nighttime and least likely to see an effect in the morning and evening'; "
         "Webb et al.'s weather effects surfaced at 0100-0200 and 1300 - 'hours of "
-        "limited movements' - not at dawn or dusk. Hunsaker et al. 2025 found no "
-        "weather effect at all on rut-period movement. Every weather term above is "
+        "limited movements' - not at dawn or dusk. Every weather term above is "
         "multiplied by (1 - this x how much of the hour sits in a sunrise/sunset "
         "halo): at 0.5 an hour fully inside a halo carries half weather weight, at "
         "0 weather counts the same everywhere, at 1 it is switched off entirely at "
         "dawn and dusk. The size is a judgment call - the sources say 'least "
         "likely' and 'less pronounced', not 'absent'.",
-        "Goethlich 2019; Webb et al. 2010; Hunsaker et al. 2025 (188 collared "
-        "males, southwest Wisconsin)",
+        "Goethlich 2019 (116 collared deer, South Carolina); Webb et al. 2010",
         fmt="{:.2f}",
     ),
 ]
@@ -1615,24 +1625,68 @@ def _summarize_weather(samples):
     }
 
 
+def _rut_anchors(weights):
+    """The ladder as (day offset, yph) anchor points, ascending.
+
+    The five measured phases sit at their band centers carrying exactly
+    the yph Neary et al. measured (scaled by the peak-rut dial), and the
+    no-rut level anchors the ramp one band beyond each end, so the curve
+    decays to it instead of falling off a cliff. The no-rut level is NOT
+    scaled by the peak dial - it is its own dial."""
+    band = weights["rut_band_days"]
+    scale = weights["rut_peak_yph"] / RUT_PEAK_YPH
+    no_rut = weights["no_rut_yph"]
+
+    return (
+        [((RUT_PHASE_YPH[0][1] - 1) * band, no_rut)]
+        + [(band_index * band, yph * scale) for _, band_index, yph in RUT_PHASE_YPH]
+        + [((RUT_PHASE_YPH[-1][1] + 1) * band, no_rut)]
+    )
+
+
 def rut_phase(day, peak_date, weights=None):
     """(phase label, yph delta) for calendar date `day`, based on its
     offset from `peak_date`. See RUT_PHASE_YPH for provenance.
 
-    Band k covers [k*band - band/2, k*band + band/2) days from peak, and
-    every phase's yph is scaled by how far the peak-rut dial sits from
-    its measured 142, so the ladder keeps the shape the study found at
-    whatever overall size the user picked."""
+    The yph is LINEARLY INTERPOLATED between the anchor points above, so
+    it is continuous in day offset. A step ladder put a 38 yph cliff
+    between two adjacent calendar days at every band boundary (offset -8
+    scored early rut's 104, offset -7 peak rut's 142), which is 0.8
+    points - more than twice the entire dawn/dusk term, and triggered by
+    a one-day change in a peak date the user is guessing at. The rut is a
+    continuous biological process; the bands are how the study reported
+    it, not how it happens.
+
+    Interpolating preserves every measured value exactly at its band
+    center and lowers the shoulders between them, which is the
+    conservative direction: the alternative - preserving each band's mean
+    - would require a peak ABOVE the measured 142, a number no study
+    reports. See litreview.md.
+
+    The LABEL is still the band the offset falls in: band membership is
+    what names a day, and the interpolation only sets its size. Between
+    the last named band and the no-rut anchor a day is labelled "Outside
+    rut" while still carrying the tail of the ramp."""
     weights = weights or DEFAULT_WEIGHTS
     band = weights["rut_band_days"]
-    scale = weights["rut_peak_yph"] / RUT_PEAK_YPH
-
     offset = (day - peak_date).days
-    for label, band_index, yph in RUT_PHASE_YPH:
+
+    label = "Outside rut"
+    for name, band_index, _ in RUT_PHASE_YPH:
         center = band_index * band
         if center - band / 2 <= offset < center + band / 2:
-            return label, yph * scale
-    return "Outside rut", weights["no_rut_yph"]
+            label = name
+            break
+
+    anchors = _rut_anchors(weights)
+    if offset <= anchors[0][0]:
+        return label, anchors[0][1]
+    if offset >= anchors[-1][0]:
+        return label, anchors[-1][1]
+    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
+        if x0 <= offset < x1:
+            return label, y0 + (offset - x0) / (x1 - x0) * (y1 - y0)
+    return label, weights["no_rut_yph"]
 
 
 def _hourly_temp_normals(samples, now_local):
@@ -3033,8 +3087,9 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "| 1 | **Daily activity** | Dawn/dusk (+/-60 min), solunar Major (+/-60 min) "
         "and Minor (+/-30 min), overlap-weighted per hour at the yph above | "
         "**Measured** - Neary et al. 2025 |\n"
-        f"| 2 | **Rut phase** | {w['rut_band_days']:.0f}-day bands around the peak date "
-        "you enter, applied to every hour of the window | **Measured** - Neary et al. "
+        f"| 2 | **Rut phase** | Five measured levels anchored "
+        f"{w['rut_band_days']:.0f} days apart around the peak date you enter and "
+        "interpolated between, applied to every hour of the window | **Measured** - Neary et al. "
         "2025 (timing is yours to supply) |\n"
         f"| 3 | **Cold** | Degrees F below this location's own trailing "
         f"{PAST_DAYS_LOOKBACK}-day normal *for that hour of day*, ramping to "
@@ -3063,8 +3118,7 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         f"| 6 | **Dawn/dusk damping** | Terms 3-5 scaled by "
         f"$1 - {w['weather_damping']:.2f} \\times$ (fraction of the hour inside a "
         "sunrise/sunset halo) | **Two studies** - Goethlich 2019 and Webb et al. 2010 "
-        "found weather effects concentrate in non-peak hours; Hunsaker et al. 2025 "
-        "found none at all during the rut |\n\n"
+        "found weather effects concentrate in non-peak hours |\n\n"
         "Terms 3-5 are bounded judgment calls: no located study reports weather as a "
         "movement *rate*, so each is capped at one dawn's worth of contribution."
     )
