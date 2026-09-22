@@ -2248,6 +2248,19 @@ def _render_weight_editor():
         st.session_state.setdefault(_weight_state_key(spec), spec.default)
 
     with st.container(border=True):
+        # yph is the unit everything in this model is expressed in, and
+        # it is meaningless to anyone who hasn't read the research - so
+        # it gets explained once, here, before the first slider.
+        st.markdown(
+            "**The effect dials are in yph - yards per hour.** That is the unit "
+            "the GPS-collar studies measured movement in: the *extra* yards per "
+            "hour bucks covered when a condition was present, against a 269 yph "
+            "season average. Dawn/dusk sitting at 48 means bucks moved about 48 "
+            "yards an hour more near sunrise and sunset than they did on an "
+            "average day. Raise a dial to weight that condition more heavily, or "
+            "drop it to zero to switch it off. The remaining dials set *where* an "
+            "effect kicks in, in their own units (°F, mph, minutes, days)."
+        )
         st.caption(
             "Every dial starts where the research put it, and shows what that "
             "value is based on. Move one and the ranking below re-computes "
@@ -2293,6 +2306,55 @@ def _render_weight_editor():
                     st.write("")
 
     return _custom_weights()
+
+
+def _render_share_formula(weights):
+    """The opt-in 'Save this formula' block: nothing touches the query
+    string until the button is pressed - see the URL_* block above for
+    why the address bar stays clean by default.
+
+    A function rather than inline UI because it has two homes. It
+    normally sits directly under the formula comparison, but that only
+    exists when there's a forecast on screen, and the link still has to
+    be reachable (and, once enabled, still has to keep itself in sync)
+    for someone who arrives on a shared link and adjusts dials before
+    entering a postcode. The caller that renders it first wins; see
+    `share_rendered`."""
+    st.subheader(":link: Save this formula")
+
+    if st.session_state.get(URL_SHARE_KEY):
+        # Rewritten on every rerun while sharing is on, so the link can
+        # never fall out of step with the dials above it.
+        params = _formula_query_params(weights)
+        st.query_params.from_dict(params)
+
+        moved = len(params) - 1
+        st.caption(
+            f"Your address bar now carries this formula "
+            f"({moved} dial{'s' if moved != 1 else ''} moved from Kendall's). "
+            "Bookmark it, or send it to someone - opening it puts every dial "
+            "back where it is now. It updates itself as you keep adjusting."
+        )
+        url = _share_url(params)
+        if url:
+            st.code(url, language=None)
+        else:
+            st.caption("Copy it straight from the address bar.")
+
+        if st.button("Take it back out of the URL"):
+            st.query_params.clear()
+            st.session_state[URL_SHARE_KEY] = False
+            st.rerun()
+    else:
+        if st.button("Put this formula in the URL", type="primary"):
+            st.session_state[URL_SHARE_KEY] = True
+            st.rerun()
+        st.caption(
+            "Your dials last until you reload the page. Press this and the "
+            "formula is written into the page's own URL, so you can bookmark "
+            "it or share it - nothing is stored anywhere, the link *is* the "
+            "formula. Until then the address bar is left alone."
+        )
 
 
 def _rut_season_year():
@@ -2368,6 +2430,10 @@ else:
     active_weights = DEFAULT_WEIGHTS
 
 using_custom = active_weights != DEFAULT_WEIGHTS
+
+# Set once the 'Save this formula' block has been drawn, so the
+# fallback at the foot of the page doesn't draw it a second time.
+share_rendered = False
 
 # --- Peak breeding (rut) date ---------------------------------------------
 #
@@ -2744,7 +2810,7 @@ if request:
                 # comparison that means nothing. Where a window places is
                 # the thing that survives rescaling.
                 if using_custom:
-                    st.subheader(":scales: Your formula vs. Kendall's")
+                    st.subheader(":balance_scale: Your formula vs. Kendall's")
 
                     kendall_timeline = build_hourly_timeline(
                         days_data, weather_samples, tz, rut_peak, DEFAULT_WEIGHTS
@@ -2820,6 +2886,12 @@ if request:
                         "without reordering anything - the point totals aren't on a "
                         "shared scale, but the ordering is."
                     )
+
+                    # Right below the comparison, while the user is still
+                    # looking at what their formula did - not at the foot
+                    # of the page behind the per-day sun/moon cards.
+                    _render_share_formula(active_weights)
+                    share_rendered = True
 
                 st.divider()
         else:
@@ -3080,47 +3152,11 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     )
 
 
-# ---------------------------------------------------------------------------
-# Save this formula (opt-in URL link)
-# ---------------------------------------------------------------------------
-#
-# Last thing on the page, and only in custom mode. Nothing touches the
-# query string until the button is pressed - see the URL_* block above
-# for why the address bar stays clean by default.
-if using_custom:
+# The share block normally lives under the formula comparison, up with
+# the forecast. This is the fallback for when there's no forecast on
+# screen to put it under - someone who arrived on a shared link, or who
+# built a formula before looking a postcode up. Once sharing is on it
+# also has to keep rewriting the URL, so it can't simply be skipped.
+if using_custom and not share_rendered:
     st.divider()
-    st.subheader(":link: Save this formula")
-
-    if st.session_state.get(URL_SHARE_KEY):
-        # Rewritten on every rerun while sharing is on, so the link can
-        # never fall out of step with the dials above it.
-        _params = _formula_query_params(active_weights)
-        st.query_params.from_dict(_params)
-
-        _moved = len(_params) - 1
-        st.caption(
-            f"Your address bar now carries this formula "
-            f"({_moved} dial{'s' if _moved != 1 else ''} moved from Kendall's). "
-            "Bookmark it, or send it to someone - opening it puts every dial "
-            "back where it is now. It updates itself as you keep adjusting."
-        )
-        _url = _share_url(_params)
-        if _url:
-            st.code(_url, language=None)
-        else:
-            st.caption("Copy it straight from the address bar.")
-
-        if st.button("Take it back out of the URL"):
-            st.query_params.clear()
-            st.session_state[URL_SHARE_KEY] = False
-            st.rerun()
-    else:
-        if st.button("Put this formula in the URL", type="primary"):
-            st.session_state[URL_SHARE_KEY] = True
-            st.rerun()
-        st.caption(
-            "Your dials last until you reload the page. Press this and the "
-            "formula is written into the page's own URL, so you can bookmark "
-            "it or share it - nothing is stored anywhere, the link *is* the "
-            "formula. Until then the address bar is left alone."
-        )
+    _render_share_formula(active_weights)

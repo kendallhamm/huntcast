@@ -66,8 +66,9 @@ ranking.
 ### Saving a formula
 
 Custom dial positions last for the browser session; reloading starts you
-back at Kendall's formula. To keep one, use **Save this formula** at the
-very bottom of the page: pressing **Put this formula in the URL** writes
+back at Kendall's formula. To keep one, use **Save this formula**, which
+sits directly under the formula comparison (or, before you've run a
+forecast, at the foot of the page): pressing **Put this formula in the URL** writes
 your dials into the page's own address, so you can bookmark it or send
 it to someone. Opening that link puts every dial back and starts in
 custom mode.
