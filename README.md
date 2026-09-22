@@ -1,5 +1,16 @@
 # Huntcaster
 
+We all have limited time in our day- and even more limited time for
+discretionary activities such as hunting! But what if there was a way to
+guesstimate the best time windows for deer movement? This could allow
+you to put yourself in the stand during periods that would be more
+likely to result in a successful harvest.
+
+This project seeks to answer just that question. It doesn't promise
+success, or even hint that it may happen. But, if you're like me, the
+illusion of control will make you feel like it made a difference. Good
+luck and happy hunting. -KH
+
 A standalone Streamlit app that ranks the best 6-hour deer hunting
 windows for any postal/zip code worldwide, using a scoring model
 calibrated against published GPS-collar research - combining rut phase,

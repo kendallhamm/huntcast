@@ -2128,6 +2128,17 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS, we
 
 st.set_page_config(page_title="Huntcaster: Hunting Window Forecast", page_icon=":deer:")
 st.title(":deer: Huntcaster: Hunting Window Forecast")
+st.markdown(
+    "We all have limited time in our day- and even more limited time for "
+    "discretionary activities such as hunting! But what if there was a way to "
+    "guesstimate the best time windows for deer movement? This could allow you "
+    "to put yourself in the stand during periods that would be more likely to "
+    "result in a successful harvest.\n\n"
+    "This project seeks to answer just that question. It doesn't promise "
+    "success, or even hint that it may happen. But, if you're like me, the "
+    "illusion of control will make you feel like it made a difference. Good "
+    "luck and happy hunting. -KH"
+)
 st.caption(
     "Ranks the best 6-hour deer hunting windows by combining rut phase, "
     "hourly weather (temp, precip, wind, pressure), and solunar major/minor "
