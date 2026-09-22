@@ -63,8 +63,51 @@ the bottom of the page re-print themselves from your dial positions, so
 the page never describes a formula other than the one that produced the
 ranking.
 
-Custom dial positions last for the browser session. Reloading the page
-starts you back at Kendall's formula.
+### Saving a formula
+
+Custom dial positions last for the browser session; reloading starts you
+back at Kendall's formula. To keep one, use **Save this formula** at the
+very bottom of the page: pressing **Put this formula in the URL** writes
+your dials into the page's own address, so you can bookmark it or send
+it to someone. Opening that link puts every dial back and starts in
+custom mode.
+
+Nothing is stored anywhere — the link *is* the formula. There's no
+account, no file, no server-side state, which keeps the app as
+self-contained as the rest of it.
+
+It is **opt-in on purpose**. The address bar is left completely alone
+until you press the button, so a query string nobody asked for doesn't
+clutter every visit. Once you have opted in, the link rewrites itself on
+every change, so it can never describe a formula other than the one on
+screen, and **Take it back out of the URL** clears it again.
+
+Only dials that differ from Kendall's are written, so a one-dial tweak
+makes a short link (`?f=1&cold_max_yph=45`). Reading a link is
+forgiving: unknown parameters are ignored, an unparseable value is
+skipped, and an out-of-range one is clamped and snapped onto its dial's
+step, so a hand-edited link degrades into the nearest sane formula
+rather than failing. The `f=1` version marker is the one hard gate — if
+the dial set ever changes, old links stop being read instead of quietly
+decoding to something different.
+
+### Comparing the two
+
+Once you've actually moved a dial, a **Your formula vs. Kendall's**
+section appears under the forecast charts: both top 3s side by side,
+and for each window, where the *other* formula places it — "Kendall's
+formula ranks this #88 of 154". A one-line verdict says whether the two
+agree on all three, some, or none.
+
+The comparison is by **rank, not points**. Scaling every dial up
+multiplies all your scores without reordering anything, so the two
+formulas' point totals aren't on a shared scale and showing them side
+by side would invite a comparison that means nothing. Where a window
+places is what survives rescaling. Ranks are out of every legal,
+un-elapsed 6-hour window in the forecast — not just the non-overlapping
+picks — because the two formulas select different non-overlapping sets,
+so a window in your top 3 may be absent from Kendall's picks entirely
+while still having a well-defined rank.
 
 ## How the scoring works
 
@@ -162,8 +205,8 @@ to open in your browser.
 5. **Peak breeding (rut) date** - defaults to November 15. Override it
    with your state wildlife agency's conception data if they publish it;
    local data beats any formula this app could apply.
-   - Tick **"I don't know my peak rut date - help me find it by state"**
-     to look it up. **North Carolina** (100 counties) and **Georgia**
+   - Expand **"I don't know my peak rut date - help me find it by state"**,
+     directly under the date box, to look it up. **North Carolina** (100 counties) and **Georgia**
      (159 counties) carry their full county tables in-app: pick your
      state, then your county, and it shows that county's date with a
      **"Use <date>, <year> as my peak rut date"** button that fills the
@@ -178,8 +221,10 @@ to open in your browser.
      open it.
 6. Click **Get hunting forecast** to fetch the location, resolve its local
    timezone, and compute/display the forecast, one card per day. The
-   forecast then stays on screen: moving a weight dial re-scores it in
-   place rather than making you look the location up again.
+   forecast then stays on screen: moving a weight dial — or changing the
+   peak rut date — re-scores it in place rather than making you look the
+   location up again. Only country, postal code and days need the button,
+   because only those change what gets fetched.
 
 ## How it works
 

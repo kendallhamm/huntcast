@@ -27,6 +27,7 @@ Run: streamlit run solunar.py
 
 import math
 from datetime import date, datetime, timedelta
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import altair as alt
@@ -1240,6 +1241,13 @@ class WeightSpec:
     def show(self, value):
         return f"{self.fmt.format(value)} {self.unit}".strip()
 
+    def snap(self, value):
+        """`value` clamped into range and rounded onto this dial's step,
+        so a hand-edited or stale share link can only ever produce a
+        position the slider itself could have produced."""
+        value = min(self.hi, max(self.lo, value))
+        return round(self.lo + round((value - self.lo) / self.step) * self.step, 4)
+
 
 WEIGHT_SPECS = [
     # --- Daily activity ---------------------------------------------------
@@ -1948,18 +1956,20 @@ def _is_illegal_night_window(window_start, window_end, sun_times):
     return starts_after_dusk and ends_before_dawn
 
 
-def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS, weights=None):
-    """Slide a `window_hours`-wide window across EVERY possible starting
-    hour in `timeline` and return the `top_n` best-scoring,
-    non-overlapping windows, highest score first. A window that has
-    already fully elapsed (its end is at or before `now_local`) is never
-    a candidate, and neither is a window that never touches legal
-    shooting light (see _is_illegal_night_window) - hunting at night
-    isn't legal, so those windows aren't computed at all. Non-overlap is
-    enforced greedily (best score first, skip anything sharing an hour
-    with an already-picked window) so two windows that are really "the
-    same" opportunity shifted by an hour don't crowd out genuine
-    variety."""
+def score_all_windows(timeline, now_local, days_data, window_hours=WINDOW_HOURS, weights=None):
+    """Every valid `window_hours`-wide window in `timeline` as a list of
+    (score, start_idx), best first - before the non-overlap filter that
+    find_candidate_windows() applies on top.
+
+    A window is valid if it hasn't already fully elapsed against
+    `now_local`, it touches legal shooting light (see
+    _is_illegal_night_window), and it scores at all.
+
+    Split out of find_candidate_windows() so the formula comparison can
+    ask where a given window places in a *complete* ranking. It has to
+    be the complete one: the two formulas pick different non-overlapping
+    sets, so a window in your top 3 may be absent from Kendall's picks
+    entirely while still having a perfectly well-defined rank."""
     sun_times = _sun_times_by_date(days_data)
     scored = []
     for start_idx in range(len(timeline) - window_hours + 1):
@@ -1973,6 +1983,22 @@ def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDO
         if s is not None:
             scored.append((s, start_idx))
     scored.sort(key=lambda pair: pair[0], reverse=True)
+    return scored
+
+
+def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS, weights=None):
+    """Slide a `window_hours`-wide window across EVERY possible starting
+    hour in `timeline` and return the `top_n` best-scoring,
+    non-overlapping windows, highest score first. A window that has
+    already fully elapsed (its end is at or before `now_local`) is never
+    a candidate, and neither is a window that never touches legal
+    shooting light (see _is_illegal_night_window) - hunting at night
+    isn't legal, so those windows aren't computed at all. Non-overlap is
+    enforced greedily (best score first, skip anything sharing an hour
+    with an already-picked window) so two windows that are really "the
+    same" opportunity shifted by an hour don't crowd out genuine
+    variety."""
+    scored = score_all_windows(timeline, now_local, days_data, window_hours, weights)
 
     picked = []
     used_hours = set()
@@ -2110,12 +2136,82 @@ st.caption(
 )
 
 RUT_PEAK_KEY = "rut_peak_date"
+PENDING_RUT_PEAK_KEY = "_pending_rut_peak"
 FORECAST_KEY = "forecast_request"
 
 MODE_KENDALL = "Kendall's formula"
 MODE_CUSTOM = "Build your own formula"
 MODE_KEY = "formula_mode"
 WEIGHT_STATE_PREFIX = "w_"
+
+# --- Sharing a formula through the URL ------------------------------------
+#
+# Opt-in, from a control at the very bottom of the page: the address bar
+# stays clean unless the user asks for a link, because a query string
+# nobody wanted is clutter on every single visit.
+#
+# Once asked for, it stays in sync - every rerun rewrites it - so the
+# link in the address bar can never describe a formula other than the
+# one on screen. Only dials that differ from Kendall's are written, so a
+# one-dial tweak makes a short link.
+URL_FORMULA_VERSION = "1"
+URL_VERSION_PARAM = "f"
+URL_SEEDED_KEY = "_url_formula_seeded"
+URL_SHARE_KEY = "_url_formula_share"
+
+
+def _weights_from_query_params():
+    """Dial positions carried in the URL, or None if there aren't any.
+
+    Deliberately forgiving, unlike a strict code: unknown parameters are
+    ignored, an unparseable value is skipped, and an out-of-range one is
+    clamped and snapped onto its dial's step. A hand-edited link
+    degrades into the nearest sane formula rather than failing. The
+    version parameter is the one hard gate - if the dial set ever
+    changes, old links stop being read instead of decoding to something
+    different."""
+    params = st.query_params
+    if params.get(URL_VERSION_PARAM) != URL_FORMULA_VERSION:
+        return None
+
+    weights = dict(DEFAULT_WEIGHTS)
+    found = False
+    for spec in WEIGHT_SPECS:
+        raw = params.get(spec.key)
+        if raw is None:
+            continue
+        try:
+            weights[spec.key] = spec.snap(float(raw))
+            found = True
+        except (TypeError, ValueError):
+            continue
+    return weights if found else None
+
+
+def _formula_query_params(weights):
+    """The query parameters that describe `weights` - the version marker
+    plus only the dials that have actually been moved."""
+    params = {URL_VERSION_PARAM: URL_FORMULA_VERSION}
+    for spec in WEIGHT_SPECS:
+        if weights[spec.key] != spec.default:
+            params[spec.key] = f"{weights[spec.key]:g}"
+    return params
+
+
+def _share_url(params):
+    """The full link to show the user: this page's own URL with the
+    formula's query string on it. Built by hand rather than read back
+    from st.context.url because that reflects the URL the run started
+    with, not the parameters just written. Returns None if the host URL
+    isn't available, in which case the caller falls back to telling them
+    to copy the address bar."""
+    try:
+        base = st.context.url
+    except Exception:
+        return None
+    if not base:
+        return None
+    return f"{base.split('?')[0]}?{urlencode(params)}"
 
 
 def _weight_state_key(spec):
@@ -2226,16 +2322,40 @@ _by_name = sorted(SUPPORTED_COUNTRIES, key=lambda pair: pair[1])
 _name_to_code = {name: code for code, name in _by_name}
 _country_names = list(_name_to_code.keys())
 
+# A formula arriving in the URL is an INITIAL condition, applied once
+# per session and never again. Re-reading it every run would fight the
+# user: the moment they nudged a dial, the next rerun would drag it back
+# to whatever the link said. Seeded here, above the mode radio and the
+# sliders, because all of those read their values from these keys.
+if URL_SEEDED_KEY not in st.session_state:
+    st.session_state[URL_SEEDED_KEY] = True
+    _linked_weights = _weights_from_query_params()
+    if _linked_weights is not None:
+        for _spec in WEIGHT_SPECS:
+            st.session_state[_weight_state_key(_spec)] = _linked_weights[_spec.key]
+        # A link only ever carries a custom formula, so open on it, and
+        # keep the address bar in sync from the start - the user already
+        # opted into a URL by following one.
+        st.session_state[MODE_KEY] = MODE_CUSTOM
+        st.session_state[URL_SHARE_KEY] = True
+
 # --- Which formula ranks the windows -------------------------------------
 #
 # Rendered before anything else on the page, and switchable at any point
 # without losing the forecast: the location, dates and weather are cached
 # and re-scored under whichever formula is selected.
+#
+# The question is drawn as its own subheader rather than left as the
+# radio's built-in label, which renders at caption size and is easy to
+# scroll straight past. The label is kept and collapsed rather than
+# dropped so screen readers still announce what the choice is.
+st.subheader("Which formula should rank your hunting windows?")
 formula_mode = st.radio(
     "Which formula should rank your hunting windows?",
     [MODE_KENDALL, MODE_CUSTOM],
     key=MODE_KEY,
     horizontal=True,
+    label_visibility="collapsed",
     captions=[
         "The app as calibrated - every weight traced to a GPS-collar study.",
         "Set the weights yourself, with the research behind each one alongside it.",
@@ -2249,75 +2369,25 @@ else:
 
 using_custom = active_weights != DEFAULT_WEIGHTS
 
-# The date widget below reads its value from session state so the
-# county lookup's "Use this date" button can fill it in.
+# --- Peak breeding (rut) date ---------------------------------------------
+#
+# Deliberately outside the location form below: the state lookup needs a
+# live button and a selectbox whose result updates as you pick, and a
+# Streamlit form allows neither - nothing inside a form reacts until it
+# is submitted. Being outside also means changing the date re-scores the
+# forecast straight away, the same way the weight dials do.
 if RUT_PEAK_KEY not in st.session_state:
     st.session_state[RUT_PEAK_KEY] = _default_rut_peak()
 
-if st.checkbox("I don't know my peak rut date - help me find it by state"):
-    st.caption(
-        f"Few states supported so far ({', '.join(RUT_DATE_HELP_STATES.keys())}) - "
-        "more will be added as county- or region-level sources are found."
-    )
-    rut_help_state = st.selectbox(
-        "State",
-        list(RUT_DATE_HELP_STATES.keys()),
-        help="More states will be added as county- or region-level sources are found.",
-    )
-    rut_help = RUT_DATE_HELP_STATES[rut_help_state]
-    counties = rut_help.get("counties")
-    statewide = rut_help.get("statewide")
+# The lookup's "Use this date" button sits BELOW the date widget now, so
+# it can no longer write RUT_PEAK_KEY directly - Streamlit refuses writes
+# to a widget's key once that widget has been drawn. It stashes the date
+# here and reruns instead, and this drains it before the widget is built.
+_pending_peak = st.session_state.pop(PENDING_RUT_PEAK_KEY, None)
+if _pending_peak is not None:
+    st.session_state[RUT_PEAK_KEY] = _pending_peak
 
-    if statewide:
-        # No sub-state breakdown published, so there is nothing to pick.
-        looked_up = _season_date(statewide["peak"])
-        st.success(
-            f"**Peak rut for {rut_help_state} (statewide): "
-            f"{_fmt_md(looked_up)}**"
-        )
-        st.caption(statewide["detail"])
-        if st.button(f"Use {_fmt_md(looked_up)}, {looked_up:%Y} as my peak rut date"):
-            st.session_state[RUT_PEAK_KEY] = looked_up
-            st.rerun()
-    elif counties:
-        # counties is this state's own table; a county is never looked
-        # up outside the state the user selected.
-        # Keyed per state so the widget's remembered selection can't
-        # survive a state switch and point at another state's area.
-        area_label = rut_help.get("area_label", "County")
-        area = st.selectbox(
-            area_label, sorted(counties), key=f"area_{rut_help_state}"
-        )
-        entry = counties[area]
-        looked_up = _season_date(entry["peak"])
-
-        # "Macon County", but just "Northern New York" for a region.
-        shown = f"{area} County" if area_label == "County" else area
-        if entry["estimated"]:
-            st.success(f"**Peak rut for {shown}: {_fmt_md(looked_up)}**")
-        else:
-            st.info(f"**{shown}: {_fmt_md(looked_up)}**")
-        st.caption(entry["detail"])
-        if entry["caution"]:
-            st.warning(entry["caution"])
-
-        if st.button(f"Use {_fmt_md(looked_up)}, {looked_up:%Y} as my peak rut date"):
-            st.session_state[RUT_PEAK_KEY] = looked_up
-            st.rerun()
-
-    st.caption(rut_help["caption"])
-    label = rut_help.get("source_label", f"the full {rut_help_state} map (PDF)")
-    st.markdown(f"[Open {label}]({rut_help['url']})")
-
-with st.form("location_form"):
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        country_name = st.selectbox(
-            "Country", _country_names, index=_country_names.index("United States"),
-        )
-    with col2:
-        postcode = st.text_input("Postal / zip code")
-    days = st.slider("Days", min_value=1, max_value=30, value=7)
+with st.container(border=True):
     rut_peak = st.date_input(
         "Peak breeding (rut) date for your area",
         key=RUT_PEAK_KEY,
@@ -2328,10 +2398,75 @@ with st.form("location_form"):
             "latitude. The default (Nov 15) follows the Pennsylvania Game "
             "Commission's fetal-aging data (peak breeding mid-November, half "
             "of does bred by Nov 13). If your state wildlife agency publishes "
-            "conception dates for your area, use those - or check the "
-            "'help me find it by state' box above."
+            "conception dates for your area, use those - or open the state "
+            "lookup just below."
         ),
     )
+
+    with st.expander("I don't know my peak rut date - help me find it by state"):
+        st.caption(
+            f"Few states supported so far ({', '.join(RUT_DATE_HELP_STATES.keys())}) - "
+            "more will be added as county- or region-level sources are found."
+        )
+        rut_help_state = st.selectbox(
+            "State",
+            list(RUT_DATE_HELP_STATES.keys()),
+            help="More states will be added as county- or region-level sources are found.",
+        )
+        rut_help = RUT_DATE_HELP_STATES[rut_help_state]
+        counties = rut_help.get("counties")
+        statewide = rut_help.get("statewide")
+
+        if statewide:
+            # No sub-state breakdown published, so there is nothing to pick.
+            looked_up = _season_date(statewide["peak"])
+            st.success(
+                f"**Peak rut for {rut_help_state} (statewide): "
+                f"{_fmt_md(looked_up)}**"
+            )
+            st.caption(statewide["detail"])
+            if st.button(f"Use {_fmt_md(looked_up)}, {looked_up:%Y} as my peak rut date"):
+                st.session_state[PENDING_RUT_PEAK_KEY] = looked_up
+                st.rerun()
+        elif counties:
+            # counties is this state's own table; a county is never looked
+            # up outside the state the user selected.
+            # Keyed per state so the widget's remembered selection can't
+            # survive a state switch and point at another state's area.
+            area_label = rut_help.get("area_label", "County")
+            area = st.selectbox(
+                area_label, sorted(counties), key=f"area_{rut_help_state}"
+            )
+            entry = counties[area]
+            looked_up = _season_date(entry["peak"])
+
+            # "Macon County", but just "Northern New York" for a region.
+            shown = f"{area} County" if area_label == "County" else area
+            if entry["estimated"]:
+                st.success(f"**Peak rut for {shown}: {_fmt_md(looked_up)}**")
+            else:
+                st.info(f"**{shown}: {_fmt_md(looked_up)}**")
+            st.caption(entry["detail"])
+            if entry["caution"]:
+                st.warning(entry["caution"])
+
+            if st.button(f"Use {_fmt_md(looked_up)}, {looked_up:%Y} as my peak rut date"):
+                st.session_state[PENDING_RUT_PEAK_KEY] = looked_up
+                st.rerun()
+
+        st.caption(rut_help["caption"])
+        label = rut_help.get("source_label", f"the full {rut_help_state} map (PDF)")
+        st.markdown(f"[Open {label}]({rut_help['url']})")
+
+with st.form("location_form"):
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        country_name = st.selectbox(
+            "Country", _country_names, index=_country_names.index("United States"),
+        )
+    with col2:
+        postcode = st.text_input("Postal / zip code")
+    days = st.slider("Days", min_value=1, max_value=30, value=7)
     submitted = st.form_submit_button("Get hunting forecast", type="primary")
 
 if submitted:
@@ -2347,12 +2482,15 @@ if submitted:
         # calls. Snapshotting the submitted values (rather than reading
         # the live widgets) also means editing the postcode box without
         # pressing the button doesn't silently move the forecast.
+        #
+        # The peak rut date is deliberately NOT snapshotted: it lives
+        # outside the form, and like the weight dials it only affects
+        # scoring, so it re-ranks the existing forecast on the spot.
         st.session_state[FORECAST_KEY] = {
             "country_code": _name_to_code[country_name],
             "country_name": country_name,
             "postcode": postcode.strip(),
             "days": days,
-            "rut_peak": rut_peak,
         }
 
 request = st.session_state.get(FORECAST_KEY)
@@ -2361,7 +2499,6 @@ if request:
     country_code = request["country_code"]
     postcode = request["postcode"]
     days = request["days"]
-    rut_peak = request["rut_peak"]
 
     with st.spinner("Looking up location..."):
         loc = lookup_location(postcode, country_code)
@@ -2596,6 +2733,93 @@ if request:
                 )
                 overview_chart = alt.layer(activity_area, temp_line).resolve_scale(y="independent")
                 st.altair_chart(overview_chart, width="stretch")
+
+                # --- Your formula vs. Kendall's ----------------------------
+                #
+                # Only worth drawing once the dials have actually moved.
+                # Compared by RANK, not by raw score: scaling every dial
+                # up multiplies every score without reordering anything,
+                # so the two formulas' point totals aren't on a shared
+                # scale and putting them side by side would invite a
+                # comparison that means nothing. Where a window places is
+                # the thing that survives rescaling.
+                if using_custom:
+                    st.subheader(":scales: Your formula vs. Kendall's")
+
+                    kendall_timeline = build_hourly_timeline(
+                        days_data, weather_samples, tz, rut_peak, DEFAULT_WEIGHTS
+                    )
+                    yours_all = score_all_windows(
+                        timeline, now_local, days_data, weights=active_weights
+                    )
+                    kendall_all = score_all_windows(
+                        kendall_timeline, now_local, days_data, weights=DEFAULT_WEIGHTS
+                    )
+                    yours_rank = {idx: r for r, (_s, idx) in enumerate(yours_all, start=1)}
+                    kendall_rank = {idx: r for r, (_s, idx) in enumerate(kendall_all, start=1)}
+                    total_windows = len(yours_all)
+
+                    kendall_candidates = find_candidate_windows(
+                        kendall_timeline, now_local, days_data, weights=DEFAULT_WEIGHTS
+                    )
+
+                    def _window_label(idx):
+                        start_dt = timeline[idx]["dt"]
+                        end_dt = start_dt + timedelta(hours=WINDOW_HOURS)
+                        return (
+                            f"{_label_for_date(start_dt.date(), today_date)} "
+                            f"{_format_time(start_dt)} - {_format_time(end_dt)}"
+                        )
+
+                    yours_top = [idx for _s, idx in candidates[:3]]
+                    kendall_top = [idx for _s, idx in kendall_candidates[:3]]
+
+                    col_you, col_kendall = st.columns(2)
+                    with col_you:
+                        st.markdown("**Your top 3**")
+                        for i, idx in enumerate(yours_top, start=1):
+                            st.write(f"**#{i}** - {_window_label(idx)}")
+                            st.caption(
+                                f"Kendall's formula ranks this "
+                                f"#{kendall_rank.get(idx, '-')} of {total_windows}"
+                            )
+                    with col_kendall:
+                        st.markdown("**Kendall's top 3**")
+                        for i, idx in enumerate(kendall_top, start=1):
+                            st.write(f"**#{i}** - {_window_label(idx)}")
+                            st.caption(
+                                f"Your formula ranks this "
+                                f"#{yours_rank.get(idx, '-')} of {total_windows}"
+                            )
+
+                    shared = len(set(yours_top) & set(kendall_top))
+                    if shared == 3:
+                        verdict = (
+                            "**Your formula picks the same top 3 Kendall's does.** "
+                            "Moving those dials didn't change what the app "
+                            "recommends - which is itself worth knowing."
+                        )
+                    elif shared:
+                        verdict = (
+                            f"**{shared} of your top 3 also make Kendall's top 3.** "
+                            "The rest is where your weights actually bite."
+                        )
+                    else:
+                        verdict = (
+                            "**Your top 3 and Kendall's have nothing in common.** "
+                            "Your weights have moved the recommendation "
+                            "completely - worth checking the dials you changed "
+                            "against the research beside them."
+                        )
+                    st.markdown(verdict)
+                    st.caption(
+                        f"Ranks are out of all {total_windows} legal, un-elapsed "
+                        f"{WINDOW_HOURS}-hour windows in this forecast, scored under "
+                        "each formula. Rank is the comparison rather than points "
+                        "because scaling every dial up multiplies all your scores "
+                        "without reordering anything - the point totals aren't on a "
+                        "shared scale, but the ordering is."
+                    )
 
                 st.divider()
         else:
@@ -2854,3 +3078,49 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "**Louisiana DWF**, **Mississippi MDWFP** and **South Carolina DNR** contour "
         "maps."
     )
+
+
+# ---------------------------------------------------------------------------
+# Save this formula (opt-in URL link)
+# ---------------------------------------------------------------------------
+#
+# Last thing on the page, and only in custom mode. Nothing touches the
+# query string until the button is pressed - see the URL_* block above
+# for why the address bar stays clean by default.
+if using_custom:
+    st.divider()
+    st.subheader(":link: Save this formula")
+
+    if st.session_state.get(URL_SHARE_KEY):
+        # Rewritten on every rerun while sharing is on, so the link can
+        # never fall out of step with the dials above it.
+        _params = _formula_query_params(active_weights)
+        st.query_params.from_dict(_params)
+
+        _moved = len(_params) - 1
+        st.caption(
+            f"Your address bar now carries this formula "
+            f"({_moved} dial{'s' if _moved != 1 else ''} moved from Kendall's). "
+            "Bookmark it, or send it to someone - opening it puts every dial "
+            "back where it is now. It updates itself as you keep adjusting."
+        )
+        _url = _share_url(_params)
+        if _url:
+            st.code(_url, language=None)
+        else:
+            st.caption("Copy it straight from the address bar.")
+
+        if st.button("Take it back out of the URL"):
+            st.query_params.clear()
+            st.session_state[URL_SHARE_KEY] = False
+            st.rerun()
+    else:
+        if st.button("Put this formula in the URL", type="primary"):
+            st.session_state[URL_SHARE_KEY] = True
+            st.rerun()
+        st.caption(
+            "Your dials last until you reload the page. Press this and the "
+            "formula is written into the page's own URL, so you can bookmark "
+            "it or share it - nothing is stored anywhere, the link *is* the "
+            "formula. Until then the address bar is left alone."
+        )
