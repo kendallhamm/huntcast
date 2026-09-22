@@ -352,13 +352,22 @@ MINOR_YPH = 0.0
 # Hunsaker et al. 2025 despite being *further north*, and central
 # Mississippi Dec 25 per Neary et al. 2025). See
 # RUT_PEAK_DEFAULT_MONTH_DAY below.
+#
+# Stored as (label, band index, measured yph): band index counts phases
+# out from peak, so with the default RUT_BAND_DAYS = 14 the bands are
+# pre-rut [-35,-21), early [-21,-7), peak [-7,7), late [7,21) and post
+# [21,35) - exactly Neary et al.'s spacing. Keeping the index rather
+# than baked-in day offsets is what lets the band width be a dial in
+# custom mode; at the default it reproduces the published bands.
 RUT_PHASE_YPH = [
-    ("Pre-rut", -35, -21, 4.0),
-    ("Early rut", -21, -7, 104.0),
-    ("Peak rut", -7, 7, 142.0),
-    ("Late rut", 7, 21, 78.0),
-    ("Post-rut", 21, 35, 9.0),
+    ("Pre-rut", -2, 4.0),
+    ("Early rut", -1, 104.0),
+    ("Peak rut", 0, 142.0),
+    ("Late rut", 1, 78.0),
+    ("Post-rut", 2, 9.0),
 ]
+RUT_BAND_DAYS = 14
+RUT_PEAK_YPH = 142.0
 # Neary et al. 2025's "No Rut" series measured -40 yph against the season
 # mean - but that mean is pulled up by the rut days themselves, so scoring
 # every non-rut day against it makes ordinary daytime movement look like a
@@ -1175,6 +1184,297 @@ PRESSURE_BAND_LOW_IN = 29.8
 PRESSURE_BAND_HIGH_IN = 30.3
 PRESSURE_BAND_YPH = 0.0
 
+
+# ---------------------------------------------------------------------------
+# TUNABLE WEIGHTS
+# ---------------------------------------------------------------------------
+#
+# Every constant above that a user is allowed to move in "build your own
+# formula" mode is re-declared here as a WeightSpec, and the scoring
+# functions below read from a weights dict rather than from the module
+# constants. `DEFAULT_WEIGHTS` is built from the `default` field of each
+# spec, and each of those defaults IS the constant above - so the default
+# dict reproduces Kendall's formula exactly, and there is one place to
+# look to see what is research-derived and what a user has moved.
+#
+# Two kinds of dial, per the README's split:
+#   - WEIGHT: how big an effect is, in yph. These are the numbers that
+#     trace to a study (or, for the weather terms, to a bounded judgment
+#     call about a study's evidential standing).
+#   - SHAPE: where an effect switches on or how far it spreads - degrees
+#     below normal, mph, minutes, days. These are mostly definitional
+#     choices carried over from how a study measured its effect.
+#
+# `snippet` and `cite` are shown verbatim in the UI next to each slider.
+# They are condensed from the comment blocks above and from README.md;
+# nothing here asserts a finding that isn't already documented there.
+
+WEIGHT = "weight"
+SHAPE = "shape"
+
+GROUP_ACTIVITY = "Daily activity"
+GROUP_RUT = "Rut"
+GROUP_WEATHER = "Weather"
+
+
+class WeightSpec:
+    """One user-movable dial: its range and step, the researched value it
+    starts at, and the research that value comes from."""
+
+    def __init__(self, key, group, kind, label, unit, lo, hi, step, default,
+                 caption, snippet, cite, fmt="{:.0f}"):
+        self.key = key
+        self.group = group
+        self.kind = kind
+        self.label = label
+        self.unit = unit
+        self.lo = lo
+        self.hi = hi
+        self.step = step
+        self.default = default
+        self.caption = caption
+        self.snippet = snippet
+        self.cite = cite
+        self.fmt = fmt
+
+    def show(self, value):
+        return f"{self.fmt.format(value)} {self.unit}".strip()
+
+
+WEIGHT_SPECS = [
+    # --- Daily activity ---------------------------------------------------
+    WeightSpec(
+        "crepuscular_yph", GROUP_ACTIVITY, WEIGHT,
+        "Dawn/dusk bonus", "yph", 0.0, 100.0, 1.0, CREPUSCULAR_YPH,
+        "+48 yph measured - the most consistently replicated effect in the literature",
+        "Within one hour of sunrise or sunset, bucks averaged 317 yph against the "
+        "269 yph season mean (+48), and were bedded 21% of the time vs. 34% "
+        "overall. Webb et al. 2010 reach the same conclusion from an independent "
+        "7-year Oklahoma data set: routine crepuscular movement - not weather, not "
+        "moon - is the dominant driver of fine-scale deer movement.",
+        "Neary et al. 2025 (48 GPS-collared bucks, central Mississippi, 15-min "
+        "fixes, Sept-Feb, 2 years); Webb et al. 2010 (32 deer, 7 years, Oklahoma)",
+    ),
+    WeightSpec(
+        "crepuscular_half_min", GROUP_ACTIVITY, SHAPE,
+        "Dawn/dusk halo half-width", "min", 15.0, 180.0, 15.0, 60.0,
+        "+/-60 min - the band the +48 yph was measured over",
+        "Sunrise and sunset are instants, but the effect isn't. Neary et al. "
+        "defined the crepuscular effect over a +/-1 hour band around each event, "
+        "so that is the band scored here. Widening this spreads the same bonus "
+        "over more hours of a window; narrowing it concentrates the bonus into "
+        "fewer.",
+        "Neary et al. 2025",
+    ),
+    WeightSpec(
+        "major_yph", GROUP_ACTIVITY, WEIGHT,
+        "Solunar major (moon overhead/underfoot)", "yph", 0.0, 60.0, 1.0, MAJOR_YPH,
+        "+3 yph measured - but three studies disagree, in both directions",
+        "Neary et al. compared each buck against his own usual movement at the "
+        "same time of day (which nets out rut phase and individual personality) "
+        "and got +3 yph for majors - indistinguishable from zero next to a 269 yph "
+        "baseline. Two other studies test solunar directly and disagree with Neary "
+        "AND with each other: Sullivan et al. 2016 found major-period activity "
+        "FELL near a new/full moon (0.540 -> 0.413 overhead), while Swartout and "
+        "Ditchkoff 2025 found top-rated days gave 3.02x and 2.83x activity odds "
+        "during moon underfoot/overhead. Swartout is the strongest pro-solunar "
+        "result located; it reports odds of being 'active' rather than a movement "
+        "rate, so converting it into yph would mean inventing a conversion. If you "
+        "think solunar deserves more weight, this is the dial to raise.",
+        "Neary et al. 2025; Sullivan et al. 2016 (38 bucks, South Carolina); "
+        "Swartout and Ditchkoff 2025 (22 bucks, high-fenced Alabama)",
+    ),
+    WeightSpec(
+        "minor_yph", GROUP_ACTIVITY, WEIGHT,
+        "Solunar minor (moonrise/moonset)", "yph", -10.0, 60.0, 1.0, MINOR_YPH,
+        "-0.1 yph measured, scored at 0",
+        "Neary et al. measured -0.1 yph for minor periods. Sullivan et al. 2016 is "
+        "the one study pointing the other way: near a new/full moon, MINOR-period "
+        "activity rose (moonrise 0.384 -> 0.564, moonset 0.403 -> 0.591) - the "
+        "opposite of the traditional chart, which rates minors as the weaker "
+        "period. Swartout and Ditchkoff 2025 found minors weakest of all (0.30x "
+        "and 0.37x odds). What all three agree on: majors matter more than minors, "
+        "and minors are neutral-to-negative.",
+        "Neary et al. 2025; Sullivan et al. 2016; Swartout and Ditchkoff 2025",
+    ),
+
+    # --- Rut --------------------------------------------------------------
+    WeightSpec(
+        "rut_peak_yph", GROUP_RUT, WEIGHT,
+        "Peak-rut bonus", "yph", 0.0, 250.0, 2.0, RUT_PEAK_YPH,
+        "+142 yph measured - the largest single effect in this model",
+        "Daytime movement deltas against the season mean, by day offset from peak "
+        "breeding: pre-rut +4, early rut +104, peak +142, late rut +78, post-rut "
+        "+9. This one dial scales the whole ladder - the other four phases keep "
+        "their measured ratios to peak - because the shape of the ladder is what "
+        "the study establishes, and disagreeing with its overall size is the "
+        "realistic disagreement to have. These are BUCK movement rates, and the "
+        "offsets are relative to the peak breeding date you enter above.",
+        "Neary et al. 2025, 'All data' series",
+    ),
+    WeightSpec(
+        "rut_band_days", GROUP_RUT, SHAPE,
+        "Width of each rut phase", "days", 7.0, 28.0, 7.0, float(RUT_BAND_DAYS),
+        "14 days - the spacing Neary et al. use between phases",
+        "Neary et al. space their phases 14 days apart (Mississippi pre-rut Nov 27 "
+        "/ early Dec 11 / peak Dec 25 / late Jan 8 / post Jan 22), so each phase is "
+        "treated as a 14-day band centered on its named day. Narrow this if you "
+        "think your herd's rut is sharper than Mississippi's; widen it if the peak "
+        "date you entered is a rough guess and you want the bonus to hedge across "
+        "more days.",
+        "Neary et al. 2025",
+    ),
+    WeightSpec(
+        "no_rut_yph", GROUP_RUT, WEIGHT,
+        "Outside the rut", "yph", -40.0, 0.0, 1.0, NO_RUT_YPH,
+        "-40 yph measured, floored at 0 here",
+        "Neary et al.'s 'No Rut' series measured -40 yph against the season mean - "
+        "but that mean is pulled up by the rut days themselves, so scoring every "
+        "non-rut day against it makes ordinary daytime movement look like a "
+        "penalty. This app ranks windows within a several-day forecast, not "
+        "against a whole season, so no-measured-rut-elevation is scored as neutral "
+        "rather than as a deficit. Drag toward -40 to score against the full-season "
+        "mean instead. Note that it only changes rankings when your forecast spans "
+        "both rut and non-rut days.",
+        "Neary et al. 2025",
+    ),
+
+    # --- Weather ----------------------------------------------------------
+    WeightSpec(
+        "cold_max_yph", GROUP_WEATHER, WEIGHT,
+        "Cold-snap bonus", "yph", 0.0, 48.0, 1.0, COLD_MAX_YPH,
+        "16 yph - a bounded judgment call, the best-supported weather term",
+        "No located study publishes weather effects as a movement-rate change, so "
+        "every weather dial is a bounded judgment call rather than a measured "
+        "figure. Temperature gets the full bound because it is the one weather "
+        "variable with consistent support: Webb et al. found general linear trends "
+        "for weather in only 8 of 80 models, and temperature accounted for 5 of "
+        "those 8. The bound itself is 'at full strength, contribute no more to a "
+        "window than a single dawn does' - 48 yph over ~2 of a 6-hour window's "
+        "hours, i.e. ~16 yph. A second check: Webb et al.'s weather parameter "
+        "estimates never exceeded ~32 yph, and they attribute even that partly to "
+        "collar error.",
+        "Webb et al. 2010; bound derived from Neary et al. 2025's dawn/dusk effect",
+    ),
+    WeightSpec(
+        "cold_scale_f", GROUP_WEATHER, SHAPE,
+        "Degrees below normal for the full cold bonus", "°F", 5.0, 40.0, 1.0,
+        COLD_ANOMALY_SCALE,
+        "15 °F below this location's own trailing 7-day normal for that hour",
+        "Scored as a departure below the location's own recent normal for that hour "
+        "of day rather than against a fixed degree threshold: a 38 °F morning "
+        "means something very different in Maine than in Georgia, and deer respond "
+        "to change from what they are acclimated to. The normal is built from the "
+        "trailing 7 days of observations for the same hour of day, so a daytime "
+        "window is compared against daytime history.",
+        "Judgment call; the anomaly-vs-threshold framing follows Webb et al. 2010",
+    ),
+    WeightSpec(
+        "precip_penalty_yph", GROUP_WEATHER, WEIGHT,
+        "Rain penalty at 100% chance", "yph", 0.0, 48.0, 1.0, PRECIP_MAX_PENALTY_YPH,
+        "-8 yph - half the weather bound; even the direction is a judgment call",
+        "Held to half the bound because rain was significant in exactly 1 of Webb "
+        "et al.'s 8 significant models. The Penn State Deer-Forest Study's storm "
+        "analysis does not support a larger penalty - and does not establish its "
+        "direction either: its two years point opposite ways (2016: 102 yph outside "
+        "storms vs. 113 during; 2017: 111 vs. 98) and it concludes there was no "
+        "significant effect. Set this to 0 if you think that null is the honest "
+        "reading, or raise it if you hunt country where rain shuts movement down.",
+        "Webb et al. 2010; Penn State Deer-Forest Study (30 storm events, 52,279 "
+        "GPS locations, 2016-17; research blog, not peer-reviewed)",
+    ),
+    WeightSpec(
+        "wind_penalty_yph", GROUP_WEATHER, WEIGHT,
+        "Wind penalty at full strength", "yph", 0.0, 48.0, 1.0, WIND_MAX_PENALTY_YPH,
+        "-8 yph - same tier as rain, same evidential standing",
+        "Wind was significant in exactly 1 of Webb et al.'s 8 significant models - "
+        "the same standing as rain, hence the same half-bound ceiling. Unlike rain, "
+        "it doesn't engage at all below a threshold.",
+        "Webb et al. 2010",
+    ),
+    WeightSpec(
+        "wind_threshold_mph", GROUP_WEATHER, SHAPE,
+        "Wind starts to bite at", "mph", 0.0, 30.0, 1.0, WIND_PENALTY_THRESHOLD_MPH,
+        "15 mph - no penalty below this",
+        "Below this speed the wind penalty is zero; above it the penalty ramps "
+        "linearly to full strength at the 'maxes out at' setting below. Neither "
+        "endpoint comes from a published movement-rate study - they are the shape "
+        "of a judgment call, not a measurement.",
+        "Judgment call",
+    ),
+    WeightSpec(
+        "wind_full_mph", GROUP_WEATHER, SHAPE,
+        "Wind penalty maxes out at", "mph", 20.0, 60.0, 1.0, WIND_PENALTY_FULL_MPH,
+        "40 mph - full penalty at or above this",
+        "The top of the wind ramp. If you set this at or below the threshold above, "
+        "the ramp collapses into a step: no penalty below the threshold, full "
+        "penalty at or above it.",
+        "Judgment call",
+    ),
+    WeightSpec(
+        "pressure_drop_yph", GROUP_WEATHER, WEIGHT,
+        "Falling-pressure bonus (0.4+ inHg over 24h)", "yph", 0.0, 48.0, 1.0,
+        PRESSURE_DROP_YPH,
+        "+5 yph, near-token - small and unproven rather than disproven",
+        "Falling pressure has a sliver of support: Webb et al.'s separate "
+        "day-over-day analysis of weather CHANGES found 10 of 80 models "
+        "significant and attributed 3 of those 10 to pressure, and Goethlich 2019 "
+        "found pressure affected activity in some seasons and times of day. "
+        "Against that, Webb et al.'s within-day analysis found pressure was the "
+        "only one of five weather variables with no linear trend at all, and Penn "
+        "State found 'no statistical or biological significance' of oncoming storms "
+        "(before/during/after/control rates all within ~94-113 yph). Pinned at half "
+        "that ~10 yph spread, which is itself an upper bound on an effect that "
+        "study could not detect. A smaller 0.2 inHg fall scores half of whatever "
+        "you set here.",
+        "Webb et al. 2010; Goethlich 2019 (116 collared deer, South Carolina, "
+        "2009-2018); Penn State Deer-Forest Study",
+    ),
+    WeightSpec(
+        "pressure_band_yph", GROUP_WEATHER, WEIGHT,
+        "Pressure 'sweet spot' bonus (29.8-30.3 inHg)", "yph", 0.0, 48.0, 1.0,
+        PRESSURE_BAND_YPH,
+        "0 yph - this one traces to a magazine rule of thumb, not a study",
+        "The 29.8-30.3 inHg 'sweet spot' band is widely repeated in the hunting "
+        "press. No located study tests a static pressure LEVEL (as opposed to a "
+        "change), and the closest thing to a test is Webb et al.'s within-day null "
+        "- pressure was the only one of their five weather variables with no linear "
+        "trend. So it ships at zero: the band is still reported in each window's "
+        "description for hunters who track it, it just doesn't move the ranking. "
+        "This is the dial with the weakest evidence behind it of anything on this "
+        "page; it is here because it is the one people ask for.",
+        "No supporting study located; Webb et al. 2010 is the nearest null result",
+    ),
+    WeightSpec(
+        "weather_damping", GROUP_WEATHER, SHAPE,
+        "Dawn/dusk weather damping", "", 0.0, 1.0, 0.05, WEATHER_CREPUSCULAR_DAMPING,
+        "0.5 - weather matters less at dawn and dusk, when deer move anyway",
+        "Two studies independently found that weather effects concentrate in "
+        "NON-peak hours. Goethlich 2019 was 'most likely to see a significant "
+        "relationship between abiotic factors and activity during daytime and "
+        "nighttime and least likely to see an effect in the morning and evening'; "
+        "Webb et al.'s weather effects surfaced at 0100-0200 and 1300 - 'hours of "
+        "limited movements' - not at dawn or dusk. Hunsaker et al. 2025 found no "
+        "weather effect at all on rut-period movement. Every weather term above is "
+        "multiplied by (1 - this x how much of the hour sits in a sunrise/sunset "
+        "halo): at 0.5 an hour fully inside a halo carries half weather weight, at "
+        "0 weather counts the same everywhere, at 1 it is switched off entirely at "
+        "dawn and dusk. The size is a judgment call - the sources say 'least "
+        "likely' and 'less pronounced', not 'absent'.",
+        "Goethlich 2019; Webb et al. 2010; Hunsaker et al. 2025 (188 collared "
+        "males, southwest Wisconsin)",
+        fmt="{:.2f}",
+    ),
+]
+
+WEIGHT_SPECS_BY_KEY = {spec.key: spec for spec in WEIGHT_SPECS}
+WEIGHT_GROUPS = [GROUP_ACTIVITY, GROUP_RUT, GROUP_WEATHER]
+
+# Kendall's formula: the researched value of every dial. Passing this to
+# the scoring functions reproduces the app's original behaviour exactly.
+DEFAULT_WEIGHTS = {spec.key: spec.default for spec in WEIGHT_SPECS}
+
+
 # How many top-scoring, non-overlapping windows to search for; the UI
 # text list only shows the top 3 of these, but the score bar chart plots
 # all of them.
@@ -1307,14 +1607,24 @@ def _summarize_weather(samples):
     }
 
 
-def rut_phase(day, peak_date):
-    """(phase label, measured yph delta) for calendar date `day`, based
-    on its offset from `peak_date`. See RUT_PHASE_YPH for provenance."""
+def rut_phase(day, peak_date, weights=None):
+    """(phase label, yph delta) for calendar date `day`, based on its
+    offset from `peak_date`. See RUT_PHASE_YPH for provenance.
+
+    Band k covers [k*band - band/2, k*band + band/2) days from peak, and
+    every phase's yph is scaled by how far the peak-rut dial sits from
+    its measured 142, so the ladder keeps the shape the study found at
+    whatever overall size the user picked."""
+    weights = weights or DEFAULT_WEIGHTS
+    band = weights["rut_band_days"]
+    scale = weights["rut_peak_yph"] / RUT_PEAK_YPH
+
     offset = (day - peak_date).days
-    for label, start_offset, end_offset, yph in RUT_PHASE_YPH:
-        if start_offset <= offset < end_offset:
-            return label, yph
-    return "Outside rut", NO_RUT_YPH
+    for label, band_index, yph in RUT_PHASE_YPH:
+        center = band_index * band
+        if center - band / 2 <= offset < center + band / 2:
+            return label, yph * scale
+    return "Outside rut", weights["no_rut_yph"]
 
 
 def _hourly_temp_normals(samples, now_local):
@@ -1347,21 +1657,27 @@ def _hourly_temp_normals(samples, now_local):
 # instantaneous events for display, but Neary et al. 2025 measured the
 # crepuscular effect over a +/-1 hour band around each, so that is the
 # band scored here.
-_SCORE_HALF_WINDOW = {
-    "Major": MAJOR_HALF_WINDOW,
-    "Minor": MINOR_HALF_WINDOW,
-    "Sunrise": CREPUSCULAR_HALF_WINDOW,
-    "Sunset": CREPUSCULAR_HALF_WINDOW,
-}
-_KIND_YPH = {
-    "Major": MAJOR_YPH,
-    "Minor": MINOR_YPH,
-    "Sunrise": CREPUSCULAR_YPH,
-    "Sunset": CREPUSCULAR_YPH,
-}
+def _score_half_windows(weights):
+    """Per-kind scoring halo. Major/Minor keep the halos their displayed
+    periods are drawn from; the dawn/dusk halo is a dial."""
+    return {
+        "Major": MAJOR_HALF_WINDOW,
+        "Minor": MINOR_HALF_WINDOW,
+        "Sunrise": timedelta(minutes=weights["crepuscular_half_min"]),
+        "Sunset": timedelta(minutes=weights["crepuscular_half_min"]),
+    }
 
 
-def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
+def _kind_yph(weights):
+    return {
+        "Major": weights["major_yph"],
+        "Minor": weights["minor_yph"],
+        "Sunrise": weights["crepuscular_yph"],
+        "Sunset": weights["crepuscular_yph"],
+    }
+
+
+def build_hourly_timeline(days_data, samples, tz, rut_peak_date, weights=None):
     """Flatten fetch_solunar()'s days_data and fetch_hourly_weather()'s
     samples into one hour-by-hour timeline covering the whole forecast,
     so the sliding window search below can start at ANY hour instead of
@@ -1393,7 +1709,13 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
 
     `samples` may (and normally does) extend PAST_DAYS_LOOKBACK days
     before today; those hours never become timeline entries, but they do
-    feed the temperature normals and the pressure lookback."""
+    feed the temperature normals and the pressure lookback.
+
+    `weights` defaults to DEFAULT_WEIGHTS - Kendall's formula."""
+    weights = weights or DEFAULT_WEIGHTS
+    score_half_window = _score_half_windows(weights)
+    kind_yph = _kind_yph(weights)
+
     now_local = datetime.now(tz).replace(tzinfo=None)
     today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -1414,12 +1736,12 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
             # (Major/Minor) are scored from their center outward, so the
             # displayed period stays independent of the scored halo.
             center = p["start"] + (p["end"] - p["start"]) / 2
-            half = _SCORE_HALF_WINDOW.get(p["kind"], timedelta(0))
+            half = score_half_window.get(p["kind"], timedelta(0))
             overlap_hours = (
                 min(center + half, hour_end) - max(center - half, hour_start)
             ).total_seconds() / 3600
             if overlap_hours > 0:
-                activity += _KIND_YPH.get(p["kind"], 0.0) * POINTS_PER_YPH * overlap_hours
+                activity += kind_yph.get(p["kind"], 0.0) * POINTS_PER_YPH * overlap_hours
                 if p["kind"] in ("Sunrise", "Sunset"):
                     crepuscular += overlap_hours
                 events.append(p)
@@ -1429,7 +1751,7 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date):
         # WEATHER_CREPUSCULAR_DAMPING.
         crepuscular = min(1.0, crepuscular)
 
-        rut_label, rut_yph = rut_phase(hour_start.date(), rut_peak_date)
+        rut_label, rut_yph = rut_phase(hour_start.date(), rut_peak_date, weights)
 
         sample = samples_by_hour.get(hour_start)
         normal = temp_normals.get(hour_start.hour)
@@ -1470,18 +1792,23 @@ def _pressure_drop_in(samples_by_hour, hour_start):
     return before["pressure_inhg"] - now["pressure_inhg"]
 
 
-def _pressure_drop_yph(pressure_drop):
+def _pressure_drop_yph(pressure_drop, weights=None):
     """Tiered falling-pressure effect in yph for a pressure_drop (inHg,
     from _pressure_drop_in()) - 0.0 if None or below the minor
     threshold. Shared by _hour_weather_yph() (scored per hour) and
     format_window() (which reports the window-start reading) so the
-    tiers behind the displayed label are the ones actually scored."""
+    tiers behind the displayed label are the ones actually scored.
+
+    The smaller tier keeps its measured-to-full ratio (2.5 of 5.0) as the
+    full tier is dialled, so there is one pressure dial rather than two."""
+    weights = weights or DEFAULT_WEIGHTS
     if pressure_drop is None:
         return 0.0
+    full = weights["pressure_drop_yph"]
     if pressure_drop >= PRESSURE_DROP_THRESHOLD_IN:
-        return PRESSURE_DROP_YPH
+        return full
     if pressure_drop >= PRESSURE_DROP_MINOR_THRESHOLD_IN:
-        return PRESSURE_DROP_MINOR_YPH
+        return full * (PRESSURE_DROP_MINOR_YPH / PRESSURE_DROP_YPH)
     return 0.0
 
 
@@ -1490,7 +1817,7 @@ CATEGORY_RUT = "Rut Phase"
 CATEGORY_WEATHER = "Weather"
 
 
-def _hour_weather_yph(hour):
+def _hour_weather_yph(hour, weights=None):
     """Net weather effect for one timeline hour, in yph, or None if the
     hour has no weather data at all. Cold bonus and pressure bonuses,
     minus the rain and wind penalties, then damped by how much of the
@@ -1500,33 +1827,42 @@ def _hour_weather_yph(hour):
     damping can be applied to exactly the hours it belongs to, and so
     that the weather term is the same "mean over the window's hours"
     shape as the activity and rut terms."""
+    weights = weights or DEFAULT_WEIGHTS
     weather = hour["weather"]
     if not weather:
         return None
 
     yph = 0.0
     if hour["temp_anomaly"] is not None:
-        yph += COLD_MAX_YPH * min(1.0, max(0.0, hour["temp_anomaly"] / COLD_ANOMALY_SCALE))
+        yph += weights["cold_max_yph"] * min(
+            1.0, max(0.0, hour["temp_anomaly"] / weights["cold_scale_f"])
+        )
 
     if weather["precip_max"] is not None:
-        yph -= PRECIP_MAX_PENALTY_YPH * weather["precip_max"] / 100.0
+        yph -= weights["precip_penalty_yph"] * weather["precip_max"] / 100.0
 
     if weather["wind_avg"] is not None:
-        wind_span = WIND_PENALTY_FULL_MPH - WIND_PENALTY_THRESHOLD_MPH
-        yph -= WIND_MAX_PENALTY_YPH * min(
-            1.0, max(0.0, (weather["wind_avg"] - WIND_PENALTY_THRESHOLD_MPH) / wind_span)
-        )
+        # The user can drag the ramp's top at or below its bottom; when
+        # they do, the ramp collapses to a step at the threshold rather
+        # than dividing by zero or going negative.
+        wind_span = weights["wind_full_mph"] - weights["wind_threshold_mph"]
+        over = weather["wind_avg"] - weights["wind_threshold_mph"]
+        if wind_span <= 0:
+            wind_frac = 1.0 if over >= 0 else 0.0
+        else:
+            wind_frac = min(1.0, max(0.0, over / wind_span))
+        yph -= weights["wind_penalty_yph"] * wind_frac
 
     pressure = weather["pressure_avg"]
     if pressure is not None and PRESSURE_BAND_LOW_IN <= pressure <= PRESSURE_BAND_HIGH_IN:
-        yph += PRESSURE_BAND_YPH
+        yph += weights["pressure_band_yph"]
 
-    yph += _pressure_drop_yph(hour["pressure_drop"])
+    yph += _pressure_drop_yph(hour["pressure_drop"], weights)
 
-    return yph * (1.0 - WEATHER_CREPUSCULAR_DAMPING * hour["crepuscular"])
+    return yph * (1.0 - weights["weather_damping"] * hour["crepuscular"])
 
 
-def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
+def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS, weights=None):
     """Same validity rules as score_window(), but returns the individual
     named terms that sum to the total score, so callers (the stacked
     score bar chart) can show where a window's score actually comes
@@ -1545,7 +1881,12 @@ def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
     is what makes a two-hour effect and an all-day effect comparable.
     The weather mean is taken over the hours that have weather data, so
     a partially-covered window is not diluted by its blank hours.
+
+    The timeline's activity and rut terms were already computed under
+    `weights` by build_hourly_timeline(); the same dict has to be passed
+    here so the weather term is scored under the same formula.
     """
+    weights = weights or DEFAULT_WEIGHTS
     hours = timeline[start_idx:start_idx + window_hours]
     if len(hours) < window_hours:
         return None
@@ -1555,7 +1896,9 @@ def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
     activity = sum(h["activity"] for h in hours) / len(hours)
     rut = sum(h["rut"] for h in hours) / len(hours)
 
-    hourly_weather = [w for w in (_hour_weather_yph(h) for h in hours) if w is not None]
+    hourly_weather = [
+        w for w in (_hour_weather_yph(h, weights) for h in hours) if w is not None
+    ]
     weather_yph = sum(hourly_weather) / len(hourly_weather) if hourly_weather else 0.0
     weather = weather_yph * POINTS_PER_YPH
 
@@ -1567,11 +1910,11 @@ def score_breakdown(timeline, start_idx, window_hours=WINDOW_HOURS):
     }
 
 
-def score_window(timeline, start_idx, window_hours=WINDOW_HOURS):
+def score_window(timeline, start_idx, window_hours=WINDOW_HOURS, weights=None):
     """Combined goodness score for timeline[start_idx:start_idx+window_hours]
     - the 'total' from score_breakdown(), or None under the same
     conditions score_breakdown() returns None."""
-    breakdown = score_breakdown(timeline, start_idx, window_hours)
+    breakdown = score_breakdown(timeline, start_idx, window_hours, weights)
     return breakdown["total"] if breakdown else None
 
 
@@ -1605,7 +1948,7 @@ def _is_illegal_night_window(window_start, window_end, sun_times):
     return starts_after_dusk and ends_before_dawn
 
 
-def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS):
+def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDOW_COUNT, window_hours=WINDOW_HOURS, weights=None):
     """Slide a `window_hours`-wide window across EVERY possible starting
     hour in `timeline` and return the `top_n` best-scoring,
     non-overlapping windows, highest score first. A window that has
@@ -1626,7 +1969,7 @@ def find_candidate_windows(timeline, now_local, days_data, top_n=CANDIDATE_WINDO
             continue
         if _is_illegal_night_window(window_start, window_end, sun_times):
             continue
-        s = score_window(timeline, start_idx, window_hours)
+        s = score_window(timeline, start_idx, window_hours, weights)
         if s is not None:
             scored.append((s, start_idx))
     scored.sort(key=lambda pair: pair[0], reverse=True)
@@ -1666,9 +2009,10 @@ def _chart_theme():
     return surface, ink
 
 
-def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
+def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS, weights=None):
     """One line describing timeline[start_idx:start_idx+window_hours],
     for direct display in the UI."""
+    weights = weights or DEFAULT_WEIGHTS
     hours = timeline[start_idx:start_idx + window_hours]
     start_dt = hours[0]["dt"]
     end_dt = hours[-1]["dt"] + timedelta(hours=1)
@@ -1727,9 +2071,15 @@ def format_window(timeline, start_idx, today_date, window_hours=WINDOW_HOURS):
             avg_pressure = sum(pressures) / len(pressures)
             pressure_bit = f"pressure {avg_pressure:.2f} inHg"
             if PRESSURE_BAND_LOW_IN <= avg_pressure <= PRESSURE_BAND_HIGH_IN:
-                # Informational only: PRESSURE_BAND_YPH is 0, so this
-                # band does not move the score. See the constant.
-                pressure_bit += " (traditional 'sweet spot' band)"
+                # Informational at the researched weight of 0, but a
+                # custom formula can put real points on this band, so
+                # the label says which it is rather than asserting the
+                # band never scores.
+                band_yph = weights["pressure_band_yph"]
+                pressure_bit += (
+                    f" (traditional 'sweet spot' band, +{band_yph:.0f} yph)"
+                    if band_yph else " (traditional 'sweet spot' band)"
+                )
             bits.append(pressure_bit)
 
     pressure_drop = hours[0]["pressure_drop"]
@@ -1760,6 +2110,93 @@ st.caption(
 )
 
 RUT_PEAK_KEY = "rut_peak_date"
+FORECAST_KEY = "forecast_request"
+
+MODE_KENDALL = "Kendall's formula"
+MODE_CUSTOM = "Build your own formula"
+MODE_KEY = "formula_mode"
+WEIGHT_STATE_PREFIX = "w_"
+
+
+def _weight_state_key(spec):
+    return WEIGHT_STATE_PREFIX + spec.key
+
+
+def _custom_weights():
+    """The weights dict the custom sliders currently hold. Read straight
+    out of session state rather than from the slider return values so it
+    can be called before the sliders are drawn."""
+    return {
+        spec.key: st.session_state.get(_weight_state_key(spec), spec.default)
+        for spec in WEIGHT_SPECS
+    }
+
+
+def _set_custom_weights(weights):
+    """Push `weights` into the slider widgets. Only safe to call BEFORE
+    the sliders are instantiated on this run - Streamlit refuses writes
+    to a widget's key after the widget has been drawn - which is why the
+    reset control is laid out above the sliders."""
+    for spec in WEIGHT_SPECS:
+        if spec.key in weights:
+            st.session_state[_weight_state_key(spec)] = weights[spec.key]
+
+
+def _render_weight_editor():
+    """The 'build your own' panel: every dial, with the research behind
+    it. Returns the weights dict the rest of the page should score with.
+
+    Deliberately NOT inside an expander - each dial carries its own
+    'Why this number' expander, and Streamlit won't nest those."""
+    for spec in WEIGHT_SPECS:
+        st.session_state.setdefault(_weight_state_key(spec), spec.default)
+
+    with st.container(border=True):
+        st.caption(
+            "Every dial starts where the research put it, and shows what that "
+            "value is based on. Move one and the ranking below re-computes "
+            "immediately - no need to look up your location again."
+        )
+
+        # Reset comes first, because it writes to the slider keys and
+        # that has to happen before the sliders below are drawn.
+        if st.button("Reset to Kendall's"):
+            _set_custom_weights(DEFAULT_WEIGHTS)
+            st.success("Every dial is back at its researched value.")
+
+        tabs = st.tabs(WEIGHT_GROUPS)
+        for tab, group in zip(tabs, WEIGHT_GROUPS):
+            with tab:
+                for spec in (s for s in WEIGHT_SPECS if s.group == group):
+                    decimals = 2 if spec.step < 0.5 else 0
+                    slider_format = f"%.{decimals}f"
+                    if spec.unit:
+                        slider_format += f" {spec.unit}"
+                    st.slider(
+                        spec.label,
+                        min_value=spec.lo,
+                        max_value=spec.hi,
+                        step=spec.step,
+                        key=_weight_state_key(spec),
+                        format=slider_format,
+                    )
+                    kind_tag = (
+                        "How big the effect is"
+                        if spec.kind == WEIGHT
+                        else "Where the effect kicks in"
+                    )
+                    moved = (
+                        ""
+                        if st.session_state[_weight_state_key(spec)] == spec.default
+                        else f"  — you've moved this from {spec.show(spec.default)}"
+                    )
+                    st.caption(f"{kind_tag}. {spec.caption}.{moved}")
+                    with st.expander("Why this number"):
+                        st.markdown(spec.snippet)
+                        st.caption(f"**Source:** {spec.cite}")
+                    st.write("")
+
+    return _custom_weights()
 
 
 def _rut_season_year():
@@ -1788,6 +2225,29 @@ def _default_rut_peak():
 _by_name = sorted(SUPPORTED_COUNTRIES, key=lambda pair: pair[1])
 _name_to_code = {name: code for code, name in _by_name}
 _country_names = list(_name_to_code.keys())
+
+# --- Which formula ranks the windows -------------------------------------
+#
+# Rendered before anything else on the page, and switchable at any point
+# without losing the forecast: the location, dates and weather are cached
+# and re-scored under whichever formula is selected.
+formula_mode = st.radio(
+    "Which formula should rank your hunting windows?",
+    [MODE_KENDALL, MODE_CUSTOM],
+    key=MODE_KEY,
+    horizontal=True,
+    captions=[
+        "The app as calibrated - every weight traced to a GPS-collar study.",
+        "Set the weights yourself, with the research behind each one alongside it.",
+    ],
+)
+
+if formula_mode == MODE_CUSTOM:
+    active_weights = _render_weight_editor()
+else:
+    active_weights = DEFAULT_WEIGHTS
+
+using_custom = active_weights != DEFAULT_WEIGHTS
 
 # The date widget below reads its value from session state so the
 # county lookup's "Use this date" button can fill it in.
@@ -1877,245 +2337,286 @@ with st.form("location_form"):
 if submitted:
     if not postcode.strip():
         st.error("Enter a postal/zip code.")
+        st.session_state.pop(FORECAST_KEY, None)
     else:
-        country_code = _name_to_code[country_name]
-        with st.spinner("Looking up location..."):
-            loc = lookup_location(postcode, country_code)
+        # Remember what was asked for. Moving a weight slider reruns the
+        # whole script, which clears `submitted` - without this the
+        # forecast would blank out the moment anyone touched a dial. The
+        # postcode/timezone lookups and the weather fetch are all
+        # @st.cache_data, so re-scoring under new weights costs no network
+        # calls. Snapshotting the submitted values (rather than reading
+        # the live widgets) also means editing the postcode box without
+        # pressing the button doesn't silently move the forecast.
+        st.session_state[FORECAST_KEY] = {
+            "country_code": _name_to_code[country_name],
+            "country_name": country_name,
+            "postcode": postcode.strip(),
+            "days": days,
+            "rut_peak": rut_peak,
+        }
 
-        if loc is None:
-            st.error(f"Couldn't find a location for {country_name} postal code '{postcode}'.")
-        else:
-            with st.spinner("Resolving timezone..."):
-                tz_name = lookup_timezone(loc["lat"], loc["lon"])
-            try:
-                tz = ZoneInfo(tz_name)
-            except Exception:
-                tz = UTC
+request = st.session_state.get(FORECAST_KEY)
+if request:
+    country_name = request["country_name"]
+    country_code = request["country_code"]
+    postcode = request["postcode"]
+    days = request["days"]
+    rut_peak = request["rut_peak"]
 
-            place_label = f"{loc['place']}, {loc['state']}" if loc.get("place") else f"({loc['lat']:.4f}, {loc['lon']:.4f})"
-            st.subheader(f":round_pushpin: {place_label}")
-            st.caption(f"Timezone: {tz_name}")
+    with st.spinner("Looking up location..."):
+        loc = lookup_location(postcode, country_code)
 
-            days_data = fetch_solunar(loc["lat"], loc["lon"], tz, days)
+    if loc is None:
+        st.error(f"Couldn't find a location for {country_name} postal code '{postcode}'.")
+    else:
+        with st.spinner("Resolving timezone..."):
+            tz_name = lookup_timezone(loc["lat"], loc["lon"])
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = UTC
 
-            with st.spinner("Fetching weather forecast..."):
-                weather_samples = fetch_hourly_weather(loc["lat"], loc["lon"], days)
+        place_label = f"{loc['place']}, {loc['state']}" if loc.get("place") else f"({loc['lat']:.4f}, {loc['lon']:.4f})"
+        st.subheader(f":round_pushpin: {place_label}")
+        st.caption(f"Timezone: {tz_name}")
 
-            if weather_samples:
-                timeline = build_hourly_timeline(days_data, weather_samples, tz, rut_peak)
-                now_local = datetime.now(tz).replace(tzinfo=None)
-                candidates = find_candidate_windows(timeline, now_local, days_data)
-                if candidates:
-                    st.subheader(":dart: Best Hunting Windows")
-                    st.caption(
-                        "Ranks every possible 6-hour window by rut phase, dawn/dusk "
-                        "timing, solunar activity, temperature relative to local "
-                        "normal, wind, and barometric pressure - weighted by "
-                        "measured effect sizes from GPS-collar research (see the "
-                        "scoring notes at the bottom of the page)."
+        days_data = fetch_solunar(loc["lat"], loc["lon"], tz, days)
+
+        with st.spinner("Fetching weather forecast..."):
+            weather_samples = fetch_hourly_weather(loc["lat"], loc["lon"], days)
+
+        if weather_samples:
+            timeline = build_hourly_timeline(
+                days_data, weather_samples, tz, rut_peak, active_weights
+            )
+            now_local = datetime.now(tz).replace(tzinfo=None)
+            candidates = find_candidate_windows(
+                timeline, now_local, days_data, weights=active_weights
+            )
+            if candidates:
+                st.subheader(":dart: Best Hunting Windows")
+                st.caption(
+                    "Ranks every possible 6-hour window by rut phase, dawn/dusk "
+                    "timing, solunar activity, temperature relative to local "
+                    "normal, wind, and barometric pressure - weighted by "
+                    + (
+                        "the weights **you** set (see the scoring notes at the "
+                        "bottom of the page, which are printed from your own "
+                        "dial positions)."
+                        if using_custom
+                        else "measured effect sizes from GPS-collar research "
+                        "(see the scoring notes at the bottom of the page)."
                     )
-                    today_date = now_local.date()
-                    top_candidates = candidates[:3]
-                    for i, (_score, start_idx) in enumerate(top_candidates, start=1):
-                        st.write(f"**#{i}** - {format_window(timeline, start_idx, today_date)}")
-
-                    # Ranked by score (candidates is score-sorted) but charted in
-                    # chronological order, so the x-axis reads left-to-right as time
-                    # rather than jumping around by rank.
-                    ranked_by_time = sorted(
-                        enumerate(candidates, start=1),
-                        key=lambda pair: timeline[pair[1][1]]["dt"],
-                    )
-
-                    # Each bar is stacked by score SOURCE rather than plotted
-                    # as one solid color, so it's visible at a glance where a
-                    # window's score is actually coming from. Colors are fixed
-                    # per category (never re-cycled) and match the order
-                    # they're stacked in.
-                    #
-                    # Stacking is zero-based: positive terms pile up above the
-                    # axis and negative ones hang below it. That is the right
-                    # way to show *composition*, but it means the bar's visual
-                    # span is NOT the window's net score - a window with a big
-                    # weather penalty below the axis and a dawn bonus above it
-                    # looks taller than its total. So the net is drawn
-                    # explicitly on top of every bar: a thin connector from
-                    # zero to the true total, ending in a diamond, and a
-                    # direct value label on the top-3 ranked windows only (a
-                    # number on all 15 would be noise; the rest are in the
-                    # tooltip).
-                    category_order = [CATEGORY_RUT, CATEGORY_ACTIVITY, CATEGORY_WEATHER]
-                    category_colors = ["#1baf7a", "#2a78d6", "#eb6834"]
-                    surface, ink = _chart_theme()
-
-                    # The axis label is day + time only (no rank number) so
-                    # it reads as a plain left-to-right timeline; rank is
-                    # still available in the tooltip and in the top-3 list
-                    # above the chart, and doesn't need to march 1,2,3... in
-                    # this order since the bars are sorted by time, not rank.
-                    window_labels = []
-                    breakdown_rows = []
-                    net_rows = []
-                    for i, (score, start_idx) in ranked_by_time:
-                        label = (
-                            f"{_label_for_date(timeline[start_idx]['dt'].date(), today_date)}\n"
-                            f"{_format_time(timeline[start_idx]['dt'])}"
+                )
+                today_date = now_local.date()
+                top_candidates = candidates[:3]
+                for i, (_score, start_idx) in enumerate(top_candidates, start=1):
+                    st.write(
+                        f"**#{i}** - "
+                        + format_window(
+                            timeline, start_idx, today_date, weights=active_weights
                         )
-                        window_labels.append(label)
-                        breakdown = score_breakdown(timeline, start_idx)
-                        for rank, category in enumerate(category_order):
-                            breakdown_rows.append({
-                                "Window": label,
-                                "Category": category,
-                                "CategoryRank": rank,
-                                "Score": round(breakdown[category], 2),
-                                "Net": round(breakdown["total"], 2),
-                                "Rank": i,
-                            })
-                        net_rows.append({
-                            "Window": label,
-                            "Rank": i,
-                            "Net": round(breakdown["total"], 2),
-                            "Zero": 0.0,
-                            "NetLabel": f"{breakdown['total']:+.2f}" if i <= 3 else "",
-                        })
-
-                    score_breakdown_df = pd.DataFrame(breakdown_rows)
-                    net_df = pd.DataFrame(net_rows)
-
-                    x_axis = alt.X(
-                        "Window:N", sort=window_labels, title=None,
-                        # labelOverlap off forces every column to keep its
-                        # label - the default hides some when 15 bars are
-                        # this tightly packed, which is what made the order
-                        # look scrambled. Rotated -90 so each label needs
-                        # only its own bar's width instead of colliding with
-                        # its neighbors.
-                        axis=alt.Axis(
-                            labelAngle=-90, labelOverlap=False,
-                            labelAlign="right", labelBaseline="middle",
-                        ),
-                    )
-                    # A stroke in the surface color puts a 2px gap between
-                    # touching segments (and between the bar and the axis),
-                    # so neighbouring colors read as separate without a
-                    # drawn border.
-                    bars = alt.Chart(score_breakdown_df).mark_bar(
-                        stroke=surface, strokeWidth=2,
-                    ).encode(
-                        x=x_axis,
-                        y=alt.Y("Score:Q", title="Score (points)", stack="zero"),
-                        color=alt.Color(
-                            "Category:N",
-                            scale=alt.Scale(domain=category_order, range=category_colors),
-                            legend=alt.Legend(title="Score source"),
-                        ),
-                        order=alt.Order("CategoryRank:Q"),
-                        tooltip=[
-                            alt.Tooltip("Window:N"),
-                            alt.Tooltip("Rank:Q", title="Rank by score"),
-                            alt.Tooltip("Category:N"),
-                            alt.Tooltip("Score:Q", format="+.2f", title="This term"),
-                            alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
-                        ],
-                    )
-                    zero_line = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
-                        color=ink, opacity=0.45, strokeWidth=1,
-                    ).encode(y="y:Q")
-                    net_connector = alt.Chart(net_df).mark_rule(
-                        color=ink, opacity=0.75, strokeWidth=1.5,
-                    ).encode(x=x_axis, y="Zero:Q", y2="Net:Q")
-                    net_marker = alt.Chart(net_df).mark_point(
-                        shape="diamond", size=120, filled=True,
-                        color=ink, stroke=surface, strokeWidth=2,
-                    ).encode(
-                        x=x_axis,
-                        y=alt.Y("Net:Q"),
-                        tooltip=[
-                            alt.Tooltip("Window:N"),
-                            alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
-                            alt.Tooltip("Rank:Q", title="Rank"),
-                        ],
-                    )
-                    def _net_label_layers(dy, keep):
-                        """Net-score label above (dy<0) or below (dy>0) the
-                        diamond, for rows matching `keep`. Drawn twice: a
-                        fat surface-colored copy first as a halo, then the
-                        ink copy, so the label stays legible when it lands
-                        on a colored segment."""
-                        base = alt.Chart(net_df).encode(
-                            x=x_axis, y="Net:Q", text="NetLabel:N",
-                        ).transform_filter(keep)
-                        halo = base.mark_text(
-                            fontWeight="bold", fontSize=12, dy=dy,
-                            color=surface, stroke=surface, strokeWidth=4, opacity=0.9,
-                        )
-                        text = base.mark_text(
-                            fontWeight="bold", fontSize=12, dy=dy, color=ink,
-                        )
-                        return [halo, text]
-
-                    net_labels = (
-                        _net_label_layers(-13, alt.datum.Net >= 0)
-                        + _net_label_layers(15, alt.datum.Net < 0)
-                    )
-                    score_chart = alt.layer(
-                        bars, zero_line, net_connector, net_marker, *net_labels,
-                    ).properties(height=340)
-                    st.altair_chart(score_chart, width="stretch")
-                    st.caption(
-                        "Each bar is stacked by where its score comes from: **Rut "
-                        "Phase** (the largest measured effect, so it sets the level "
-                        "for a whole day rather than separating windows within it), "
-                        "**Daily Activity** (dawn/dusk plus solunar major/minor), and "
-                        "the combined **Weather** effect. Bonuses stack above the "
-                        "zero line and penalties hang below it, so the bar's height "
-                        "alone is not the score - the **diamond is the net score** "
-                        "(bonuses minus penalties), and the top 3 windows carry their "
-                        "net value as a label. Hover any segment or diamond for exact "
-                        "numbers."
                     )
 
-                    st.subheader(":chart_with_upwards_trend: Forecast Overview")
-                    st.caption(
-                        "Hourly solunar activity (area) vs. temperature (line) across "
-                        "the whole forecast."
-                    )
-                    timeline_df = pd.DataFrame({
-                        "dt": [h["dt"] for h in timeline],
-                        "activity": [h["activity"] for h in timeline],
-                        "temp_f": [h["weather"]["temp_avg"] if h["weather"] else None for h in timeline],
-                    })
-                    base = alt.Chart(timeline_df).encode(x=alt.X("dt:T", title="Date / Time"))
-                    activity_area = base.mark_area(opacity=0.35, color="#4C78A8").encode(
-                        y=alt.Y("activity:Q", title="Activity Points"),
-                    )
-                    temp_line = base.mark_line(color="#E45756", strokeWidth=2).encode(
-                        y=alt.Y("temp_f:Q", title="Temp (°F)"),
-                    )
-                    overview_chart = alt.layer(activity_area, temp_line).resolve_scale(y="independent")
-                    st.altair_chart(overview_chart, width="stretch")
-
-                    st.divider()
-            else:
-                st.warning(
-                    "Couldn't fetch the weather forecast, so hunting-window "
-                    "ranking is unavailable right now - the solunar and sunrise/sunset "
-                    "times are still shown below."
+                # Ranked by score (candidates is score-sorted) but charted in
+                # chronological order, so the x-axis reads left-to-right as time
+                # rather than jumping around by rank.
+                ranked_by_time = sorted(
+                    enumerate(candidates, start=1),
+                    key=lambda pair: timeline[pair[1][1]]["dt"],
                 )
 
-            for day in days_data:
-                with st.container(border=True):
-                    st.markdown(f"**{day['label']}**")
-                    if not day["periods"]:
-                        st.caption("No data available for this day.")
-                        continue
-                    for p in day["periods"]:
-                        emoji = _KIND_EMOJI.get(p["kind"], "")
-                        if p["start"] == p["end"]:
-                            st.write(f"{emoji} **{p['kind']}** - {_format_time(p['start'])}")
-                        else:
-                            st.write(f"{emoji} **{p['kind']}** - {_format_time(p['start'])} - {_format_time(p['end'])}")
+                # Each bar is stacked by score SOURCE rather than plotted
+                # as one solid color, so it's visible at a glance where a
+                # window's score is actually coming from. Colors are fixed
+                # per category (never re-cycled) and match the order
+                # they're stacked in.
+                #
+                # Stacking is zero-based: positive terms pile up above the
+                # axis and negative ones hang below it. That is the right
+                # way to show *composition*, but it means the bar's visual
+                # span is NOT the window's net score - a window with a big
+                # weather penalty below the axis and a dawn bonus above it
+                # looks taller than its total. So the net is drawn
+                # explicitly on top of every bar: a thin connector from
+                # zero to the true total, ending in a diamond, and a
+                # direct value label on the top-3 ranked windows only (a
+                # number on all 15 would be noise; the rest are in the
+                # tooltip).
+                category_order = [CATEGORY_RUT, CATEGORY_ACTIVITY, CATEGORY_WEATHER]
+                category_colors = ["#1baf7a", "#2a78d6", "#eb6834"]
+                surface, ink = _chart_theme()
+
+                # The axis label is day + time only (no rank number) so
+                # it reads as a plain left-to-right timeline; rank is
+                # still available in the tooltip and in the top-3 list
+                # above the chart, and doesn't need to march 1,2,3... in
+                # this order since the bars are sorted by time, not rank.
+                window_labels = []
+                breakdown_rows = []
+                net_rows = []
+                for i, (score, start_idx) in ranked_by_time:
+                    label = (
+                        f"{_label_for_date(timeline[start_idx]['dt'].date(), today_date)}\n"
+                        f"{_format_time(timeline[start_idx]['dt'])}"
+                    )
+                    window_labels.append(label)
+                    breakdown = score_breakdown(
+                        timeline, start_idx, weights=active_weights
+                    )
+                    for rank, category in enumerate(category_order):
+                        breakdown_rows.append({
+                            "Window": label,
+                            "Category": category,
+                            "CategoryRank": rank,
+                            "Score": round(breakdown[category], 2),
+                            "Net": round(breakdown["total"], 2),
+                            "Rank": i,
+                        })
+                    net_rows.append({
+                        "Window": label,
+                        "Rank": i,
+                        "Net": round(breakdown["total"], 2),
+                        "Zero": 0.0,
+                        "NetLabel": f"{breakdown['total']:+.2f}" if i <= 3 else "",
+                    })
+
+                score_breakdown_df = pd.DataFrame(breakdown_rows)
+                net_df = pd.DataFrame(net_rows)
+
+                x_axis = alt.X(
+                    "Window:N", sort=window_labels, title=None,
+                    # labelOverlap off forces every column to keep its
+                    # label - the default hides some when 15 bars are
+                    # this tightly packed, which is what made the order
+                    # look scrambled. Rotated -90 so each label needs
+                    # only its own bar's width instead of colliding with
+                    # its neighbors.
+                    axis=alt.Axis(
+                        labelAngle=-90, labelOverlap=False,
+                        labelAlign="right", labelBaseline="middle",
+                    ),
+                )
+                # A stroke in the surface color puts a 2px gap between
+                # touching segments (and between the bar and the axis),
+                # so neighbouring colors read as separate without a
+                # drawn border.
+                bars = alt.Chart(score_breakdown_df).mark_bar(
+                    stroke=surface, strokeWidth=2,
+                ).encode(
+                    x=x_axis,
+                    y=alt.Y("Score:Q", title="Score (points)", stack="zero"),
+                    color=alt.Color(
+                        "Category:N",
+                        scale=alt.Scale(domain=category_order, range=category_colors),
+                        legend=alt.Legend(title="Score source"),
+                    ),
+                    order=alt.Order("CategoryRank:Q"),
+                    tooltip=[
+                        alt.Tooltip("Window:N"),
+                        alt.Tooltip("Rank:Q", title="Rank by score"),
+                        alt.Tooltip("Category:N"),
+                        alt.Tooltip("Score:Q", format="+.2f", title="This term"),
+                        alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
+                    ],
+                )
+                zero_line = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
+                    color=ink, opacity=0.45, strokeWidth=1,
+                ).encode(y="y:Q")
+                net_connector = alt.Chart(net_df).mark_rule(
+                    color=ink, opacity=0.75, strokeWidth=1.5,
+                ).encode(x=x_axis, y="Zero:Q", y2="Net:Q")
+                net_marker = alt.Chart(net_df).mark_point(
+                    shape="diamond", size=120, filled=True,
+                    color=ink, stroke=surface, strokeWidth=2,
+                ).encode(
+                    x=x_axis,
+                    y=alt.Y("Net:Q"),
+                    tooltip=[
+                        alt.Tooltip("Window:N"),
+                        alt.Tooltip("Net:Q", format="+.2f", title="Net score"),
+                        alt.Tooltip("Rank:Q", title="Rank"),
+                    ],
+                )
+                def _net_label_layers(dy, keep):
+                    """Net-score label above (dy<0) or below (dy>0) the
+                    diamond, for rows matching `keep`. Drawn twice: a
+                    fat surface-colored copy first as a halo, then the
+                    ink copy, so the label stays legible when it lands
+                    on a colored segment."""
+                    base = alt.Chart(net_df).encode(
+                        x=x_axis, y="Net:Q", text="NetLabel:N",
+                    ).transform_filter(keep)
+                    halo = base.mark_text(
+                        fontWeight="bold", fontSize=12, dy=dy,
+                        color=surface, stroke=surface, strokeWidth=4, opacity=0.9,
+                    )
+                    text = base.mark_text(
+                        fontWeight="bold", fontSize=12, dy=dy, color=ink,
+                    )
+                    return [halo, text]
+
+                net_labels = (
+                    _net_label_layers(-13, alt.datum.Net >= 0)
+                    + _net_label_layers(15, alt.datum.Net < 0)
+                )
+                score_chart = alt.layer(
+                    bars, zero_line, net_connector, net_marker, *net_labels,
+                ).properties(height=340)
+                st.altair_chart(score_chart, width="stretch")
+                st.caption(
+                    "Each bar is stacked by where its score comes from: **Rut "
+                    "Phase** (the largest measured effect, so it sets the level "
+                    "for a whole day rather than separating windows within it), "
+                    "**Daily Activity** (dawn/dusk plus solunar major/minor), and "
+                    "the combined **Weather** effect. Bonuses stack above the "
+                    "zero line and penalties hang below it, so the bar's height "
+                    "alone is not the score - the **diamond is the net score** "
+                    "(bonuses minus penalties), and the top 3 windows carry their "
+                    "net value as a label. Hover any segment or diamond for exact "
+                    "numbers."
+                )
+
+                st.subheader(":chart_with_upwards_trend: Forecast Overview")
+                st.caption(
+                    "Hourly solunar activity (area) vs. temperature (line) across "
+                    "the whole forecast."
+                )
+                timeline_df = pd.DataFrame({
+                    "dt": [h["dt"] for h in timeline],
+                    "activity": [h["activity"] for h in timeline],
+                    "temp_f": [h["weather"]["temp_avg"] if h["weather"] else None for h in timeline],
+                })
+                base = alt.Chart(timeline_df).encode(x=alt.X("dt:T", title="Date / Time"))
+                activity_area = base.mark_area(opacity=0.35, color="#4C78A8").encode(
+                    y=alt.Y("activity:Q", title="Activity Points"),
+                )
+                temp_line = base.mark_line(color="#E45756", strokeWidth=2).encode(
+                    y=alt.Y("temp_f:Q", title="Temp (°F)"),
+                )
+                overview_chart = alt.layer(activity_area, temp_line).resolve_scale(y="independent")
+                st.altair_chart(overview_chart, width="stretch")
+
+                st.divider()
+        else:
+            st.warning(
+                "Couldn't fetch the weather forecast, so hunting-window "
+                "ranking is unavailable right now - the solunar and sunrise/sunset "
+                "times are still shown below."
+            )
+
+        for day in days_data:
+            with st.container(border=True):
+                st.markdown(f"**{day['label']}**")
+                if not day["periods"]:
+                    st.caption("No data available for this day.")
+                    continue
+                for p in day["periods"]:
+                    emoji = _KIND_EMOJI.get(p["kind"], "")
+                    if p["start"] == p["end"]:
+                        st.write(f"{emoji} **{p['kind']}** - {_format_time(p['start'])}")
+                    else:
+                        st.write(f"{emoji} **{p['kind']}** - {_format_time(p['start'])} - {_format_time(p['end'])}")
 
 st.divider()
 st.caption(
@@ -2124,11 +2625,36 @@ st.caption(
     "research does not bear that out - the measured effect of both is close to "
     "zero, while dawn and dusk are consistently the strongest daily signal. "
     "They're shown here because they're what this app computes, but the window "
-    "ranking above weights them at their measured size, not their traditional "
-    "one. See the scoring notes below."
+    + (
+        f"ranking above weights majors at the {active_weights['major_yph']:.0f} yph "
+        f"and minors at the {active_weights['minor_yph']:.0f} yph **you** set, not "
+        "at the +3 / -0.1 yph that was measured."
+        if using_custom
+        else "ranking above weights them at their measured size, not their "
+        "traditional one."
+    )
+    + " See the scoring notes below."
 )
 
+# Everything in the notes below is printed from the weights actually in
+# force, so the page never describes a formula other than the one that
+# produced the ranking above. The "Measured" column stays the published
+# figure in both modes - that is a fact about the study, not a setting.
+w = active_weights
+_rut_scale = w["rut_peak_yph"] / RUT_PEAK_YPH
+_halo_hours = w["crepuscular_half_min"] / 60.0
+_dawn_share = min(WINDOW_HOURS, 2 * _halo_hours) / WINDOW_HOURS
+
 with st.expander(":straight_ruler: How the hunting-window score is calculated"):
+    if using_custom:
+        st.warning(
+            "**You're on your own formula, not Kendall's.** Every number on this "
+            "page reflects the dials you set, so it stays an accurate description "
+            "of the ranking above - but the citations describe what the research "
+            "measured, which is no longer what you're scoring. The differences are "
+            "called out per dial in the editor at the top of the page, and "
+            "**Reset to Kendall's** puts everything back."
+        )
     st.markdown(
         f"Each candidate is a rolling **{WINDOW_HOURS}-hour** window. Every effect is "
         "kept in the unit the research measured it in - **yards per hour (yph) of "
@@ -2143,35 +2669,54 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     )
     st.markdown(
         "$k$ is anchored so peak rut - the largest measured effect, +142 yph - is worth "
-        "3.0 points; $d$ damps weather at dawn and dusk (term 6). **No activity weight "
-        "here is hand-tuned.**"
+        f"3.0 points; $d$ damps weather at dawn and dusk (term 6). "
+        + (
+            "**Your dial positions, not the measured ones, are what gets scored.**"
+            if using_custom
+            else "**No activity weight here is hand-tuned.**"
+        )
     )
 
-    st.markdown("### The measured weights")
     st.markdown(
-        "All from **Neary et al. 2025** (48 GPS-collared bucks, central Mississippi, "
-        "Sept-Feb, 2 years), against a **269 yph season mean**:\n\n"
-        "| Effect | Measured | Points |\n"
-        "|---|---|---|\n"
-        f"| Peak rut | +142 yph | {142 * POINTS_PER_YPH:.2f} |\n"
-        f"| Early rut | +104 yph | {104 * POINTS_PER_YPH:.2f} |\n"
-        f"| Late rut | +78 yph | {78 * POINTS_PER_YPH:.2f} |\n"
-        f"| **Within 1 hr of sunrise/sunset** | **+48 yph** (317 vs. 269) | "
-        f"**{CREPUSCULAR_YPH * POINTS_PER_YPH:.2f}** |\n"
-        f"| Post-rut | +9 yph | {9 * POINTS_PER_YPH:.2f} |\n"
-        f"| Pre-rut | +4 yph | {4 * POINTS_PER_YPH:.2f} |\n"
+        "### Your weights" if using_custom else "### The measured weights"
+    )
+    st.markdown(
+        "Measured values are all from **Neary et al. 2025** (48 GPS-collared bucks, "
+        "central Mississippi, Sept-Feb, 2 years), against a **269 yph season mean**. "
+        "**Scored** is what this app actually put on each effect:\n\n"
+        "| Effect | Measured | Scored (yph) | Points |\n"
+        "|---|---|---|---|\n"
+        f"| Peak rut | +142 yph | {142 * _rut_scale:.0f} | "
+        f"{142 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
+        f"| Early rut | +104 yph | {104 * _rut_scale:.0f} | "
+        f"{104 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
+        f"| Late rut | +78 yph | {78 * _rut_scale:.0f} | "
+        f"{78 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
+        f"| **Within {_halo_hours:g} hr of sunrise/sunset** | **+48 yph** (317 vs. 269) "
+        f"| **{w['crepuscular_yph']:.0f}** | "
+        f"**{w['crepuscular_yph'] * POINTS_PER_YPH:.2f}** |\n"
+        f"| Post-rut | +9 yph | {9 * _rut_scale:.0f} | "
+        f"{9 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
+        f"| Pre-rut | +4 yph | {4 * _rut_scale:.0f} | "
+        f"{4 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
         f"| **Solunar Major** (moon overhead/underfoot) | **+3 yph** | "
-        f"**{MAJOR_YPH * POINTS_PER_YPH:.2f}** |\n"
+        f"**{w['major_yph']:.0f}** | **{w['major_yph'] * POINTS_PER_YPH:.2f}** |\n"
         f"| **Solunar Minor** (moonrise/moonset) | **-0.1 yph** | "
-        f"**{MINOR_YPH * POINTS_PER_YPH:.2f}** |\n"
-        f"| Outside the rut | -40 yph measured, floored at 0 | "
-        f"{NO_RUT_YPH * POINTS_PER_YPH:.2f} |\n\n"
+        f"**{w['minor_yph']:.0f}** | **{w['minor_yph'] * POINTS_PER_YPH:.2f}** |\n"
+        f"| Outside the rut | -40 yph | {w['no_rut_yph']:.0f} | "
+        f"{w['no_rut_yph'] * POINTS_PER_YPH:.2f} |\n\n"
         "Points are the effect at its own rate; what it adds to a window also depends "
-        "on how many hours it covers - a dawn band covers ~2 of 6, so it contributes "
-        f"~{CREPUSCULAR_YPH * 2 / WINDOW_HOURS * POINTS_PER_YPH:.2f}.\n\n"
-        "**Rut phase and dawn/dusk dominate; solunar major and minor are "
-        "indistinguishable from zero.** They're computed and shown because hunters ask "
-        "for them, not because they move the ranking."
+        f"on how many hours it covers - a dawn band covers ~{2 * _halo_hours:g} of "
+        f"{WINDOW_HOURS}, so it contributes "
+        f"~{w['crepuscular_yph'] * _dawn_share * POINTS_PER_YPH:.2f}.\n\n"
+        + (
+            "Rut phase and dawn/dusk are the two effects the research puts above "
+            "everything else; whether your dials still reflect that is worth a look."
+            if using_custom
+            else "**Rut phase and dawn/dusk dominate; solunar major and minor are "
+            "indistinguishable from zero.** They're computed and shown because "
+            "hunters ask for them, not because they move the ranking."
+        )
     )
 
     st.markdown("### The six terms")
@@ -2181,28 +2726,35 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "| 1 | **Daily activity** | Dawn/dusk (+/-60 min), solunar Major (+/-60 min) "
         "and Minor (+/-30 min), overlap-weighted per hour at the yph above | "
         "**Measured** - Neary et al. 2025 |\n"
-        "| 2 | **Rut phase** | 14-day bands around the peak date you enter, applied to "
-        "every hour of the window | **Measured** - Neary et al. 2025 (timing is yours "
-        "to supply) |\n"
+        f"| 2 | **Rut phase** | {w['rut_band_days']:.0f}-day bands around the peak date "
+        "you enter, applied to every hour of the window | **Measured** - Neary et al. "
+        "2025 (timing is yours to supply) |\n"
         f"| 3 | **Cold** | Degrees F below this location's own trailing "
         f"{PAST_DAYS_LOOKBACK}-day normal *for that hour of day*, ramping to "
-        f"{COLD_MAX_YPH:.0f} yph at {COLD_ANOMALY_SCALE:.0f} below | "
+        f"{w['cold_max_yph']:.0f} yph at {w['cold_scale_f']:.0f} below | "
         "**Judgment call** - temperature drove 5 of the 8 significant weather models "
         "in Webb et al. 2010, more than any other variable |\n"
-        f"| 4 | **Rain/wind** | Subtracted: rain to -{PRECIP_MAX_PENALTY_YPH:.0f} yph "
-        f"at 100% chance; wind to -{WIND_MAX_PENALTY_YPH:.0f} yph above "
-        f"{WIND_PENALTY_THRESHOLD_MPH:.0f} mph, maxing at "
-        f"{WIND_PENALTY_FULL_MPH:.0f} | **Judgment call** - 1 of those 8 models each "
+        f"| 4 | **Rain/wind** | Subtracted: rain to -{w['precip_penalty_yph']:.0f} yph "
+        f"at 100% chance; wind to -{w['wind_penalty_yph']:.0f} yph above "
+        f"{w['wind_threshold_mph']:.0f} mph, maxing at "
+        f"{w['wind_full_mph']:.0f} | **Judgment call** - 1 of those 8 models each "
         "(Webb et al. 2010); the Penn State Deer-Forest Study's two storm years "
         "disagree on direction |\n"
-        f"| 5 | **Pressure** | {PRESSURE_DROP_YPH:.0f} yph "
-        f"({PRESSURE_DROP_MINOR_YPH:.1f} for a smaller fall) on a falling 24-hour "
-        f"trend; the {PRESSURE_BAND_LOW_IN}-{PRESSURE_BAND_HIGH_IN} inHg \"sweet spot\" "
-        "band is reported but scores **zero** | **Near-token** - Penn State found no "
+        f"| 5 | **Pressure** | {w['pressure_drop_yph']:.0f} yph "
+        f"({w['pressure_drop_yph'] * PRESSURE_DROP_MINOR_YPH / PRESSURE_DROP_YPH:.1f} "
+        "for a smaller fall) on a falling 24-hour trend; the "
+        f"{PRESSURE_BAND_LOW_IN}-{PRESSURE_BAND_HIGH_IN} inHg \"sweet spot\" band is "
+        "reported and scores "
+        + (
+            f"**{w['pressure_band_yph']:.0f} yph**"
+            if w["pressure_band_yph"]
+            else "**zero**"
+        )
+        + " | **Near-token** - Penn State found no "
         "significant storm effect; pressure was the one variable of five in Webb et "
         "al. 2010 with no within-day trend |\n"
         f"| 6 | **Dawn/dusk damping** | Terms 3-5 scaled by "
-        f"$1 - {WEATHER_CREPUSCULAR_DAMPING} \\times$ (fraction of the hour inside a "
+        f"$1 - {w['weather_damping']:.2f} \\times$ (fraction of the hour inside a "
         "sunrise/sunset halo) | **Two studies** - Goethlich 2019 and Webb et al. 2010 "
         "found weather effects concentrate in non-peak hours; Hunsaker et al. 2025 "
         "found none at all during the rut |\n\n"

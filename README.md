@@ -39,7 +39,37 @@ On top of the daily feeding times, the app cross-references rut phase and
 an hourly weather forecast to rank the best ~6-hour "hunting windows"
 over the search period, using the scoring formula described below.
 
+## Two modes
+
+The first thing the app asks is which formula should rank your windows.
+
+**1. Kendall's formula** (the default) is the model described below:
+every weight traced to a GPS-collar study, nothing hand-tuned.
+
+**2. Build your own formula** exposes 16 dials — the effect sizes, and
+the thresholds that decide where each effect switches on — with the
+research behind each one printed next to it: a one-line summary of what
+was measured, and a **"Why this number"** expander holding the relevant
+finding and its citation. Dials are in **yph**, the same unit the
+studies report, so what you set is directly comparable to what was
+measured. The rut ladder is a single dial that scales all five phases
+together, because the ladder's *shape* is what Neary et al. establish
+and its overall *size* is the realistic thing to disagree about.
+
+Switching modes never loses your forecast — the location, dates and
+weather are cached, and only the scoring re-runs — and **Reset to
+Kendall's** puts every dial back. In custom mode the scoring notes at
+the bottom of the page re-print themselves from your dial positions, so
+the page never describes a formula other than the one that produced the
+ranking.
+
+Custom dial positions last for the browser session. Reloading the page
+starts you back at Kendall's formula.
+
 ## How the scoring works
+
+This section describes **Kendall's formula** — the default, and the
+starting position of every dial in custom mode.
 
 Every term in the model is expressed in the unit the underlying
 GPS-collar research measured it in — **yards per hour (yph) of excess
@@ -50,7 +80,10 @@ source data (peak rut, +142 yph) is worth 3.0 points.
 The consequence is that **no activity weight in this model is
 hand-tuned**: each is whatever a study measured, so the relative
 ordering of rut vs. dawn/dusk vs. solunar is auditable rather than a
-matter of taste.
+matter of taste. (That claim is about Kendall's formula. A custom
+formula is hand-tuned by definition — that is the point of it — which is
+why the app labels it as yours and keeps the measured value visible
+beside every dial you've moved.)
 
 | Effect | Measured | Points at that rate |
 |---|---|---|
@@ -112,15 +145,21 @@ to open in your browser.
 
 ## Using it
 
-1. **Country** - dropdown of every country
+1. **Which formula** - **Kendall's formula** (the researched default) or
+   **Build your own formula** (16 dials, each with the research behind
+   it). See [Two modes](#two-modes). You can switch at any point without
+   losing the forecast, so the quickest way in is to leave it on
+   Kendall's, get a forecast, and only then start moving dials to see
+   what changes.
+2. **Country** - dropdown of every country
    [Zippopotam.us](https://www.zippopotam.us/) has postal-code data for
    (69 countries, transcribed from its "Countries Supported" table).
    Not every country in the world is listed - a country missing here has
    no postal-code coverage on Zippopotam and would just fail the lookup.
-2. **Postal / zip code** - the postal code to look up within that
+3. **Postal / zip code** - the postal code to look up within that
    country.
-3. **Days** - slider from 1 to 30 days of forecast (defaults to 7).
-4. **Peak breeding (rut) date** - defaults to November 15. Override it
+4. **Days** - slider from 1 to 30 days of forecast (defaults to 7).
+5. **Peak breeding (rut) date** - defaults to November 15. Override it
    with your state wildlife agency's conception data if they publish it;
    local data beats any formula this app could apply.
    - Tick **"I don't know my peak rut date - help me find it by state"**
@@ -137,8 +176,10 @@ to open in your browser.
      contour maps whose bands cross county lines, so there is no honest
      single date per county to show. The source PDF is always linked, but you never have to
      open it.
-5. Click **Get hunting forecast** to fetch the location, resolve its local
-   timezone, and compute/display the forecast, one card per day.
+6. Click **Get hunting forecast** to fetch the location, resolve its local
+   timezone, and compute/display the forecast, one card per day. The
+   forecast then stays on screen: moving a weight dial re-scores it in
+   place rather than making you look the location up again.
 
 ## How it works
 
