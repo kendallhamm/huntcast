@@ -72,16 +72,71 @@ subsets of the same data**:
   the peak-rut band, which includes that band's own dawn and dusk hours.
 
 Both are deviations from the same 269 yph season mean, so adding them
-predicts a dawn hour during peak rut at 269 + 142 + 48 = 459 yph. Nothing
-in the publication tests that cell. Marginal means add cleanly only if
-the effects are additive on this scale *and* each marginal already equals
-its partial effect - neither of which an extension publication reporting
-group means can establish.
+predicts a dawn hour during peak rut at 269 + 142 + 48 = 459 yph.
 
-If the structure is instead multiplicative - dawn scaling the prevailing
-rate rather than adding a fixed amount to it - then dawn during peak rut
-is worth about 411 x (317/269) - 411 = **+73 yph, not +48**, and this
-model understates dawn during the rut relative to dawn outside it.
+**Audit note (third pass) — the publication does test that cell, and the
+additive model overshoots it.** Two earlier passes of this document said
+nothing in the source tested the interaction. That was wrong. Neary et
+al.'s rut-phase movement graph reports four series, not one, and the
+fourth is **Dawn/Dusk**: each rut phase's change measured *within*
+dawn and dusk hours, against the whole season's dawn/dusk rate. Read off
+the publication:
+
+| Rut phase | All data | Minor | Major | Dawn/Dusk |
+|---|---|---|---|---|
+| No rut | −40 | −44 | −38 | −33 |
+| Pre-rut | 4 | −22 | 27 | 10 |
+| Early rut | 104 | 89 | 117 | 87 |
+| **Peak rut** | **142** | 139 | 156 | **100** |
+| Late rut | 78 | 65 | 80 | 50 |
+| Post-rut | 9 | 2 | 29 | −4 |
+
+Dawn/dusk across the whole season is 317 yph, so peak rut at dawn is
+317 + 100 = **417 yph measured**, against this model's additive
+**459** — an overshoot of about 42 yph, or 0.9 points. The rut and
+dawn/dusk effects are **sub-additive at the peak**: the rut elevates
+movement by +142 across all daytime hours but only +100 in the hours
+where deer are already up and moving. The same compression shows at late
+rut (78 → 50). Pre-rut runs the other way (4 → 10).
+
+The multiplicative alternative overshoots harder, not less: dawn scaling
+the prevailing rate would give 411 × (317/269) ≈ **484 yph**. The measured
+417 sits *below* both candidate rules, so the honest reading is that
+neither is right and the two effects partly substitute for each other.
+
+**This is now implemented.** The dawn/dusk term is multiplied by a
+measured, rut-phase-dependent factor: each phase's premium as a fraction
+of the season-wide +48.
+
+| Phase | All data | Dawn/Dusk | Premium | Factor |
+|---|---|---|---|---|
+| Outside rut | −40 | −33 | +55 | **1.15** |
+| Pre-rut | 4 | 10 | +54 | **1.13** |
+| Early rut | 104 | 87 | +31 | **0.65** |
+| Peak rut | 142 | 100 | +6 | **0.13** |
+| Late rut | 78 | 50 | +20 | **0.42** |
+| Post-rut | 9 | −4 | +35 | **0.73** |
+
+`dawn_rut_factor()` interpolates between these on the same band anchors as
+the rut ladder, so it is continuous in day offset for the same reason:
+a one-day slip in a peak date the user is estimating must not step the
+score. The factors are computed in code from the two published series
+(`RUT_PHASE_DAWN_YPH`) rather than typed in, so the derivation is
+auditable from the source numbers. A dawn hour at peak rut now scores
+269 + 142 + 6 = **417 yph, exactly the measured figure**, where the purely
+additive model gave 459.
+
+Two consequences worth stating plainly. **Dawn matters more than this app
+used to think outside the rut** — the factor is 1.15 in the early season,
+not 1.0 — and **much less during it**. And the term is now *smaller*
+overall across a typical November forecast, which slightly raises how much
+the weather block can move a ranking relative to dawn/dusk.
+
+**It is not a dial**, for the same reason the rut ladder's *shape* is not
+one: the ladder is what the study measured, and only its overall size
+(the `crepuscular_yph` dial, which scales the whole factor ladder with it)
+is a matter of opinion. Keeping the dial count at 16 also means the `f=1`
+share-link gate stays truthful and every saved formula link still loads.
 
 **Why it is kept anyway.** Fitting a joint model needs the raw collar
 fixes, which are not published; marginal means are what the source makes
@@ -108,7 +163,7 @@ yph season mean**:
 | Peak rut | +142 yph | +3.00 |
 | Early rut | +104 yph | +2.20 |
 | Late rut | +78 yph | +1.65 |
-| **Within 1 hr of sunrise/sunset** | **+48 yph** (317 vs. 269) | **+1.01** |
+| **Within 1 hr of sunrise/sunset** | **+48 yph** (317 vs. 269) | **+1.01** (scaled by rut phase - see below) |
 | Post-rut | +9 yph | +0.19 |
 | Pre-rut | +4 yph | +0.08 |
 | **Solunar Major** (moon overhead/underfoot) | **+3 yph** | **+0.06** |
@@ -130,11 +185,11 @@ neutral rather than as a deficit.
 
 | # | Term | Basis |
 |---|---|---|
-| 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. **Measured.** |
+| 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. The dawn/dusk term is additionally scaled by a **measured rut-phase factor** (1.15 outside the rut down to 0.13 at peak) - see "Adding the terms". **Measured.** |
 | 2 | **Rut phase** | Five measured levels anchored 14 days apart around a user-supplied peak breeding date, interpolated between so the ladder is continuous in day offset. **Measured** (effect size); **user-supplied** (timing). |
 | 3 | **Cold** | Degrees below this location's own recent normal *for that hour of day*, ramping to 16 yph at 15°F below normal. **Judgment call, bounded.** |
 | 4 | **Rain/wind penalty** | Rain to -8 yph at 100% chance; wind to -8 yph, engaging only above 15 mph and maxing at 40 mph. **Judgment call, bounded.** |
-| 5 | **Pressure** | 5 yph (or 2.5) for a falling 24-hour trend. The 29.8-30.3 inHg "sweet spot" band is still reported in the window text but carries **zero** weight. **Folklore, near-token.** |
+| 5 | **Pressure** | **Zero, both halves.** The falling 24-hour trend and the 29.9-30.3 inHg "sweet spot" band are both reported in the window text; neither moves the ranking. The 0.2 / 0.4 inHg triggers are **old-timer theory** (see the audit notes under term 5 below). **Folklore, scored at zero.** |
 | 6 | **Dawn/dusk damping** | Terms 3-5 are evaluated hour by hour and multiplied by `1 - 0.5 × (fraction of the hour inside a sunrise/sunset halo)`. **Structure from two studies; size a judgment call.** |
 
 The weather terms (3-5) could not be calibrated the same way, because no
@@ -208,17 +263,33 @@ activity = (k / H) × Σ_h Σ_e  y_e × o_(h,e)
 ```
 
 `y_e` is event type *e*'s measured yph effect and `o_(h,e)` the fraction
-of hour *h* that the event's band covers. Bands:
+of hour *h* that the event's band covers. For sunrise and sunset, `y_e` is
+further multiplied by `dawn_rut_factor(day)` — the measured rut-phase
+ladder in "Adding the terms is itself an assumption" above, which runs
+from 1.15 outside the rut to 0.13 at peak. Bands:
 
-| Event | Half-width | Constant |
-|---|---|---|
-| Sunrise / sunset | ±60 min | `CREPUSCULAR_HALF_WINDOW` |
-| Solunar major (moon overhead/underfoot) | ±60 min | `MAJOR_HALF_WINDOW` |
-| Solunar minor (moonrise/moonset) | ±30 min | `MINOR_HALF_WINDOW` |
+| Event | Half-width | Where it lives | Basis |
+|---|---|---|---|
+| Sunrise / sunset | ±60 min | `crepuscular_half_min` dial | Neary et al. 2025's own definition |
+| Solunar major (moon overhead/underfoot) | ±60 min | `MAJOR_HALF_WINDOW` | Solunar convention |
+| Solunar minor (moonrise/moonset) | ±30 min | `MINOR_HALF_WINDOW` | Solunar convention |
 
 The ±60 min sunrise/sunset halo is not a choice — it matches how Neary
 et al. 2025 defined "within an hour of" dawn and dusk, which is the
-definition their +48 yph figure was measured under.
+definition their +48 yph figure was measured under. It is a dial rather
+than a constant so the app has one place to read it from; an earlier
+version of this table pointed at a `CREPUSCULAR_HALF_WINDOW` constant
+that the scoring code had stopped reading.
+
+The two solunar half-widths do **not** have that standing, and the table
+above used to imply they did by listing all three together. They are the
+durations traditional solunar charts give the periods themselves — majors
+~2 hrs, minors ~1 hr — so they describe the windows this app *displays*,
+and no located study measures deer movement over those bands. That is
+tolerable at `MAJOR_YPH = 3` and `MINOR_YPH = 0`, where the whole term is
+worth 0.06 points; it is worth knowing before raising the major dial,
+which both this document and the app invite, because the band a raised
+bonus gets spread across is fixed here and unsourced.
 
 **2. Rut phase.** A per-day level applied to every hour of the window.
 The five measured phases are anchored at day offsets spaced
@@ -299,21 +370,78 @@ pressure_h = Y_band × 1[P_low ≤ P_h ≤ P_high]          (band)
 
 `P_h` is the hour's sea-level pressure (inHg) and `ΔP_h` the fall over
 the `PRESSURE_DROP_LOOKBACK_HOURS = 24` hours before it.
-`P_low = 29.8`, `P_high = 30.3`, **`Y_band = PRESSURE_BAND_YPH = 0`**;
-`ΔP_minor = 0.2` → `Y_drop,minor = 2.5` yph, `ΔP_min = 0.4` →
-`Y_drop = 5.0` yph. So the whole pressure term can contribute at most
-0.11 points.
+`P_low = 29.9`, `P_high = 30.3`, **`Y_band = PRESSURE_BAND_YPH = 0`**;
+`ΔP_minor = 0.2`, `ΔP_min = 0.4`, and
+**`Y_drop = PRESSURE_DROP_YPH = 0`** with
+`Y_drop,minor = Y_drop × PRESSURE_DROP_MINOR_FRACTION` (0.5). **So the
+whole pressure term contributes nothing to Kendall's formula**, and both
+tiers remain dials for anyone who disagrees. It shipped at 5.0 / 2.5 yph
+until the September 2026 re-verification; see the audit note below.
 
 The static band is still *reported* in the window text for hunters who
 track it, but `PRESSURE_BAND_YPH` is deliberately left in the code at
 `0.0` rather than deleted, so it is a single number to raise if evidence
 for a static-level effect ever appears.
 
+- **Audit note — the 0.2 and 0.4 inHg triggers are old-timer theory, and
+  this document had stopped saying so.** The two *thresholds* that decide
+  whether the term fires at all are not derived from anything: they are
+  old-timer theory about what counts as a meaningful barometer fall,
+  expressed in inHg because that is how a barometer is read. The commit
+  that introduced them said as much in its own comment. The later passes
+  that re-derived the *sizes* into yph and moved this write-up out of
+  README.md carried the numbers across but dropped the sentence admitting
+  what they were, so a reader auditing the model found two constants with
+  no stated basis. The label is restored rather than the numbers being
+  quietly removed, because the trend is still worth displaying.
+
+- **Audit note — the falling-pressure weight went to zero (Sept 2026).**
+  Two new leads were supplied (Amenrud 2018 and Kenyon 2020, both below)
+  and neither turned out to source the thresholds — Amenrud gives no
+  rate-of-change figure at all, only "rapidly rising or falling", and
+  Penn State reports no inHg threshold either. What the leads did turn up
+  was a **third independent null**: the Texas study of Hellickson,
+  Miller, Marchinton, DeYoung and Zabransky found "no correlation ...
+  between hourly means in male activity and temperature or barometric
+  pressure". That makes three nulls bearing on pressure (Webb et al.'s
+  within-day result, Penn State's storm analysis, Hellickson et al.)
+  against one positive that cannot be converted into this model's units
+  (Goethlich 2019, in mb/hr and reversing sign between daytime and
+  evening). Holding a 5 yph bonus up against that was the *band*'s
+  situation, not a defensible one, so `PRESSURE_DROP_YPH` now ships at
+  **0.0**, the same treatment `PRESSURE_BAND_YPH` already had. Both stay
+  as dials, and the 24-hour trend is still computed and shown in each
+  window's description.
+
+- **Audit note — the band's low edge moved to 29.90, and the band now has
+  a citation.** Amenrud 2018 is where this band comes from: *"whitetails
+  seem to move best when the pressure is between 29.90 and 30.30 inches
+  with the best movement occurring at the higher end of that range,
+  around 30.10 to 30.30 inches."* The app had been carrying 29.8, which
+  matches no source, so the low edge is now the published 29.90. Note
+  that Amenrud also reports the effect as strongest at the *top* of the
+  band, which this app's flat band does not model — irrelevant while the
+  weight is 0, and a thing to fix first if anyone raises it. His basis is
+  his own observational survey of two captive herds in the 1980s-90s with
+  no collar data and no peer review, which is exactly the standing the
+  zero weight reflects.
+
 **6. Dawn/dusk damping.**
 
 ```
 weather = (k / H) × Σ_h (cold_h + pressure_h − penalty_h) × (1 − D × c_h)
 ```
+
+Strictly, the divisor is the number of hours that **have** weather data,
+not `H` — a partly-covered window shouldn't be diluted by its blank
+hours. The two are the same for every window the app ranks, because the
+"Days" slider is capped at `OPEN_METEO_MAX_FORECAST_DAYS = 16`, the
+horizon Open-Meteo's hourly forecast will serve. It did not used to be:
+the slider ran to 30 so solunar times could be shown further out, and a
+window straddling day 16 scored its one or two weather hours at up to 6×
+the weight this formula gives them while its activity and rut terms were
+still divided by 6. The ranking changed shape at a boundary the user
+couldn't see, so the slider now stops where the weather does.
 
 `c_h` is the fraction of hour *h* inside a dawn or dusk halo (0–1) and
 `D = WEATHER_CREPUSCULAR_DAMPING = 0.5`, so an hour fully at dawn
@@ -352,14 +480,27 @@ the forecast can score a pressure trend at all.**
 
 ## Sources
 
-Every citation below has been through two independent verification
+Every citation below has been through three independent verification
 passes: bibliographic details confirmed, every URL checked to resolve,
 and every number attributed to a source re-read against the abstract or
 full text where accessible. Each entry states exactly what this project
 takes from it, flags where a source *disagrees* with the model, and notes
 any figure that could only be checked against an abstract rather than
-the full text. Corrections from the second pass (September 2026) are
-marked **Audit note**.
+the full text. Corrections are marked **Audit note**.
+
+**Third pass, 23 September 2026.** Every number in the scoring model was
+re-read against its primary source, rut-date sources excepted. What
+changed: the falling-pressure weight went to zero, the pressure band's
+low edge moved to its published 29.90, and two hunting-media sources were
+added below and labelled as what they are. What did *not* change: the
+entire Neary et al. rut ladder and every activity weight, verified
+digit-for-digit against the publication PDF; Webb et al.'s 8-of-80 tally,
+verified verbatim; Penn State's storm rates, verified verbatim; all eight
+of Sullivan et al.'s activity probabilities, verified to three decimals
+and their standard errors; Swartout and Ditchkoff's citation details,
+confirmed against the Auburn Deer Lab's own publication list. One
+standing gap closed: the Goethlich thesis full text was extracted for the
+first time (see its entry).
 
 ### Primary — supplies the weights
 
@@ -432,8 +573,10 @@ Ecology 2010:1–12, article 459610. DOI 10.1155/2010/459610.
   - **Partial disagreement, reported honestly:** in a separate
     day-over-day analysis, weather changes affected movements in 10 of
     80 models (12.5%), and **pressure accounted for 3 of those 10** —
-    more than precipitation. So pressure is not wholly inert, which is
-    why the *falling-pressure* term is small rather than zero.
+    more than precipitation. So pressure is not wholly inert — this was
+    the reason the falling-pressure term was kept small rather than
+    zeroed, until the third pass weighed it against three nulls and a
+    positive that could not be converted into yph, and zeroed it anyway.
     **Audit note:** the 10-of-80 / 3-of-10 tally lives in the full-text
     tables, which are paywalled; the second audit could confirm only that
     pressure effects appeared in three season/time-specific instances
@@ -456,9 +599,10 @@ Ecology 2010:1–12, article 459610. DOI 10.1155/2010/459610.
   or biological significance of oncoming winter storms on behavior or
   movement"**, and the hourly movement rates behind it (before ~102–105,
   during ~98–113, after ~94–111, control ~102–111 yards/hour). The
-  roughly ±10 yph spread across those conditions is the upper bound the
-  falling-pressure term is pinned to — at half that value, since it
-  bounds an effect the study could not detect at all.
+  roughly ±10 yph spread across those conditions was the upper bound the
+  falling-pressure term used to be pinned to, at half that value. That
+  term is now 0, so the spread serves only as a reminder of how small an
+  effect the study could not detect.
 - **Audit note — this source no longer backs the rain penalty.** An
   earlier README cited it for "deer moved less during storms" as the
   basis for the precipitation penalty's direction. Re-read by year, the
@@ -825,9 +969,14 @@ S.S. Ditchkoff). <https://etd.auburn.edu/handle/10415/7077>
 - **Study design:** 116 GPS-collared adult white-tailed deer, 2009–2018,
   South Carolina; activity classified from interfix step length and
   turning angles; each abiotic factor modelled separately by logistic
-  regression. **Audit note:** the thesis PDF could not be text-extracted
-  by either audit, so the 116 / 2009–2018 figures rest on indexed
-  abstract text; nothing found contradicts them.
+  regression. **Audit note (third pass) — the full text was finally
+  extracted.** Both earlier audits could only reach indexed abstract
+  text. The thesis PDF now reads, and it confirms the study design and
+  supplies in the author's own words what this project had been citing
+  from a secondary summary. On the year: the title page reads **May 2,
+  2019** while the copyright line and Auburn's ETD record both say 2020,
+  which is why citations of it differ. The 2019 date is kept, being the
+  one on the title page.
 - **What this project takes from it — now implemented:** the thesis
   abstract's conclusion, verbatim: *"responses to abiotic factors were
   typically less pronounced than circadian fluctuations in activity, and
@@ -841,12 +990,40 @@ S.S. Ditchkoff). <https://etd.auburn.edu/handle/10415/7077>
   2010 found the same thing independently** (weather effects at 0100–0200
   and 1300, "hours of limited movements"), so this is two studies, not
   one — which is the bar this project set for a structural change.
+- **The damping now rests on the thesis's own words, not a summary of
+  it** (third pass). From the extracted full text: *"Probability of
+  activity during the morning and evening periods showed minimal changes
+  and inconsistent trends relative weather condition among sexes and
+  seasons."* That is the primary-source version of the sentence the
+  damping was built on, and it says the same thing. Note it is stated
+  about *weather condition* specifically; the abstract's broader "non-peak
+  times of activity" claim is what carries it across the other weather
+  variables.
 - **Disagreement, reported honestly:** this thesis found that weather
   condition, temperature, wind speed, **barometric pressure**, moon
   phase, moon position and nocturnal brightness all "affected activity in
   some seasons and times of day." So neither pressure nor moon is
   universally inert — another reason both are downweighted rather than
   removed.
+- **What the full text says about pressure, now that it can be read**
+  (third pass). The pressure results are real but they do not point one
+  way. During the day, *"probability of activity increased with more
+  rapidly decreasing barometric pressure and decreased with greater rates
+  of increase"* (0.19, 0.15, 0.10 at −0.5, 0 and +0.5 mb/hr) — the
+  falling-pressure effect hunters believe in. But in the evening
+  *"probability of activity was greatest at 0.18 mb/hr ... and was greater
+  when barometric pressure was rising compared to when it was falling"*,
+  the opposite sign; at night activity *decreased* when pressure fell
+  faster than −0.34 mb/hr; and in the breeding season the daytime
+  response is non-monotonic (least active near −0.44 and +0.09 mb/hr,
+  most active at −0.93, −0.17 and +0.48). Two things follow. It is real
+  evidence that pressure *change* does something, which is why the dial
+  exists at all. And it cannot set the dial's value: the unit is a rate in
+  mb/hr rather than a 24-hour fall in inHg, the sign depends on the diel
+  period the app is scoring, and the outcome is activity probability
+  rather than a movement rate. Converting it would mean inventing a
+  conversion — the same objection that keeps Swartout and Ditchkoff out of
+  the solunar weight.
 - **Not independent of Sullivan et al. 2016:** both studies come from the
   Auburn Deer Lab and both used deer at Brosnan Forest, South Carolina.
   Treat them as one study site, not two replications.
@@ -881,13 +1058,81 @@ white-tailed deer.* Basic and Applied Ecology 17:360–369. DOI
   above, which says nothing about barometric pressure. The false citation
   has been removed.
 
+### Hunting media — folklore, cited as folklore
+
+These are not studies and are not treated as ones. They are here because
+two of this model's constants demonstrably came from this literature, and
+naming the actual origin is better than carrying an unsourced number.
+Both were supplied as leads in the third pass.
+
+**Amenrud, T. 2018.** *Barometric Pressure's Influence on Whitetail
+Movement.* Mossy Oak (blog), 21 June 2018.
+<https://www.mossyoak.com/our-obsession/blogs/deer/barometric-pressures-influence-on-whitetail-movement-4>
+
+- **What it is:** an experienced hunter's account, drawing on his own
+  "W.M.W.M." (What Makes Whitetails Move) observational survey from the
+  1980s–90s and two private captive herds. **No collar data, no
+  institutional affiliation, no peer review**, and no external studies
+  cited.
+- **What this project takes from it:** the **pressure band**, which is
+  its actual origin: *"whitetails seem to move best when the pressure is
+  between 29.90 and 30.30 inches with the best movement occurring at the
+  higher end of that range, around 30.10 to 30.30 inches."* The app's
+  `PRESSURE_BAND_LOW_IN` was corrected from 29.8 to 29.90 to match.
+  Scores **zero**.
+- **What it does *not* source:** the 0.2 / 0.4 inHg drop thresholds. This
+  article was offered as their origin and it gives **no rate-of-change
+  figure at all** — only that *"it's the rapidly rising or falling
+  barometric pressure that precedes or follows a weather front that seems
+  to show the biggest impacts."* So those two constants remain
+  unattributed old-timer theory, and the term they gate now scores zero.
+
+**Kenyon, M. 2020.** *Does Barometric Pressure Affect Deer Movement?*
+MeatEater / Wired to Hunt, 4 September 2020.
+<https://www.themeateater.com/wired-to-hunt/whitetail-hunting/does-barometric-pressure-affect-deer-movement>
+
+- **What it is:** a hunting-media survey of the actual research, which
+  reaches the same conclusion this project did: the science does not
+  support a barometric-pressure effect, while many hunters believe in one.
+- **What this project takes from it:** a pointer to a **third independent
+  null**, the Texas work of **Hellickson, Miller, Marchinton, DeYoung and
+  Zabransky** — *"no correlation was found between hourly means in male
+  activity and temperature or barometric pressure"* — which is the direct
+  reason `PRESSURE_DROP_YPH` is now 0. It also quotes Matt Ross (then
+  QDMA): *"There's a half a dozen projects out there that have tied all
+  those data points to weather events — barometric pressure, cold fronts,
+  rain, and haven't found anything."*
+- **Two cautions on double-counting.** The "Mississippi State University
+  study" it quotes (*"a general pattern in how weather influenced deer
+  movements was not observed, except that temperature influenced deer
+  movements more than any other weather variable"*) reads as a restatement
+  of **Webb et al. 2010**, whose authors include two MSU faculty — treat
+  it as the same source, not a second one. And the Hellickson et al.
+  primary source was **not located**; it is cited here at second hand,
+  which is why it supports *zeroing* a weight rather than setting one.
+- **A tension this raises, left open.** Hellickson et al. report no
+  correlation with **temperature** either, and this model gives cold the
+  full weather ceiling on the strength of Webb et al.'s 5-of-8 tally. A
+  companion MeatEater piece on temperature (Kenyon, *Does Temperature
+  Affect Deer Movement?*) confirms the same thing from the other side —
+  reviewing five studies and reporting **no movement-rate figure for
+  temperature from any of them**. Cold keeps the ceiling for now, because
+  Webb et al. is a full-text tally and Hellickson et al. is a second-hand
+  sentence, but the cold term is the next one to look at, not the
+  pressure term.
+
 ### Searched for and not found
 
 The second research pass looked specifically for, and did not find:
 
 - Any study reporting weather effects on deer movement as a **rate**
   (distance per time) with a usable sample size. The weather terms
-  therefore remain judgment calls.
+  therefore remain judgment calls. **Confirmed a third time (Sept 2026),
+  now from the other direction:** a hunting-media review of five separate
+  temperature studies reports no movement-rate figure from any of them,
+  and the two pressure sources supplied as leads report none either. Three
+  passes and two new leads have not produced one; treat this as settled
+  until a new study appears, not as a search to repeat.
 - Any newer or rate-based **solunar** test that could adjudicate between
   Neary et al. 2025 and the two conflicting odds-based studies.
 - Any **meta-analysis or systematic review** of solunar-theory tests in

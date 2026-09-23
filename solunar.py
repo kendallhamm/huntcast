@@ -298,9 +298,10 @@ POINTS_PER_YPH = 3.0 / 142.0
 # al. 2010 reach the same conclusion from an independent 7-year Oklahoma
 # data set, concluding that routine crepuscular movement, not weather or
 # moon, is the dominant driver of fine-scale deer movement. Scored over a
-# +/-1 hour halo around each event, matching how Neary et al. defined it.
+# +/-1 hour halo around each event, matching how Neary et al. defined it -
+# that half-width is the `crepuscular_half_min` dial (default 60), not a
+# constant here, so there is one place it can come from.
 CREPUSCULAR_YPH = 48.0
-CREPUSCULAR_HALF_WINDOW = timedelta(minutes=60)
 
 # Solunar periods. Neary et al. 2025 tested these directly, comparing each
 # buck against his *own* usual movement at the same time of day (which
@@ -386,6 +387,53 @@ RUT_PEAK_YPH = 142.0
 # still true of the underlying data and is cited in the docs, it's just
 # not what gets scored.
 NO_RUT_YPH = 0.0
+NO_RUT_MEASURED_YPH = -40.0
+
+# Dawn/dusk fades during the rut, and this is measured, not inferred.
+#
+# Neary et al. 2025 report the rut-phase movement change FOUR times over:
+# once for all daytime data, and again within Minor, Major and Dawn/Dusk
+# hours separately. Two audits of this project read only the "All data"
+# series and concluded the source never tested the rut x dawn/dusk
+# interaction. It does - the Dawn/Dusk column IS that test - and the
+# additive model this app used to apply overshot it:
+#
+#   whole season:  269 yph all daytime, 317 yph at dawn/dusk (+48)
+#   peak rut:      269 + 142 = 411 all daytime
+#                  317 + 100 = 417 at dawn/dusk   <- measured
+#   additive model predicted 269 + 142 + 48 = 459  <- 42 yph too high
+#
+# So the dawn/dusk premium is not a constant +48. It is the gap between
+# the two series, phase by phase - 48 + (dawn delta - all delta):
+#
+#   no rut  +55    pre-rut +54    early +31
+#   peak     +6    late    +20    post  +35
+#
+# Read as a fraction of the season-wide +48, that is the factor ladder
+# below. It says something biologically sensible: outside the rut, dawn
+# and dusk are when bucks move and midday is when they lie down, so the
+# premium is large; at peak rut they are moving hard at midday too, so
+# dawn stops being special. A multiplicative rule fits WORSE, not better
+# (it predicts 484 yph at peak-rut dawn), so neither simple rule holds and
+# the measured gap is used directly.
+#
+# This matters to the ranking in a way the rut term itself does not. The
+# rut term is a flat per-day level, so it cancels when ranking windows
+# within one day; the dawn/dusk premium is exactly what separates a dawn
+# window from a midday window on the same date. Scoring dawn at +48
+# during peak rut over-ranks morning and evening windows against midday
+# ones by about 0.9 points, which reorders the recommendations.
+#
+# Stored as the published Dawn/Dusk deltas so the derivation stays visible
+# in the code; the factors are computed from them, never typed in.
+RUT_PHASE_DAWN_YPH = {
+    "Pre-rut": 10.0,
+    "Early rut": 87.0,
+    "Peak rut": 100.0,
+    "Late rut": 50.0,
+    "Post-rut": -4.0,
+}
+NO_RUT_DAWN_YPH = -33.0
 
 # Default peak breeding date offered in the UI. November 15 is the
 # best-supported anchor for the East Coast band this app is tuned for:
@@ -1178,21 +1226,52 @@ WEATHER_CREPUSCULAR_DAMPING = 0.5
 # could not detect. The pressure trend is also genuinely informative to
 # display.
 #
-# The 29.8-30.3 inHg "sweet spot" band traces to a hunting-magazine rule
-# of thumb; no located study tests a static pressure level, and Webb et
-# al.'s within-day null is the closest thing to a test. Its weight is
-# therefore 0 - it stays in the code as a single constant to raise if
-# evidence ever appears, and the band is reported in the window text for
-# hunters who track it.
+# The 29.9-30.3 inHg "sweet spot" band is now sourced, and the source is
+# old-timer theory: Amenrud (Mossy Oak, 2018) writes that "whitetails seem
+# to move best when the pressure is between 29.90 and 30.30 inches", on
+# the strength of his own 1980s-90s observational survey of captive herds,
+# citing no collar study. That is where the band comes from, so the low
+# edge is 29.90 as published rather than the 29.8 this app used to carry.
+# No located study tests a static pressure LEVEL, and Webb et al.'s
+# within-day null - pressure was the only one of their five weather
+# variables with no linear trend - is the closest thing to a test. Weight
+# stays 0; the band is reported in the window text for hunters who track
+# it.
+#
+# The two DROP THRESHOLDS are old-timer theory too, and should be read
+# that way: 0.2 and 0.4 inHg are what a falling barometer is traditionally
+# said to have to do before it means anything, expressed in inHg because
+# that's how a barometer is read. The commit that first added them said so
+# and the label was lost in a later rewrite. The Sept 2026 re-verification
+# went looking for a source with two new leads in hand and did not find
+# one: Amenrud gives no rate-of-change number at all ("rapidly rising or
+# falling" and nothing quantified), and Penn State's storm analysis
+# reports no inHg threshold either. See the audit note in litreview.md.
+#
+# PRESSURE_DROP_YPH is therefore 0.0 as of that pass, on the same footing
+# as the band. Three separate nulls now bear on it - Webb et al.'s
+# within-day result, Penn State's storm null, and Hellickson et al.'s
+# Texas finding of no correlation between hourly buck activity and
+# barometric pressure - and the one positive signal located (Goethlich
+# 2019) reverses sign between daytime and evening and is measured in
+# mb/hr, not a 24-hour inHg total. The trend is still computed and
+# displayed, because a falling barometer is genuinely informative to look
+# at, and both tiers remain dials so a user who backs the old-timers can
+# put the weight back.
 HPA_PER_INHG = 33.8639
 
 PRESSURE_DROP_LOOKBACK_HOURS = 24
 PRESSURE_DROP_MINOR_THRESHOLD_IN = 0.2
-PRESSURE_DROP_MINOR_YPH = 2.5
 PRESSURE_DROP_THRESHOLD_IN = 0.4
-PRESSURE_DROP_YPH = 5.0
+PRESSURE_DROP_YPH = 0.0
+# The smaller tier as a fraction of the full one, from the 2.5-of-5.0 pair
+# this term shipped with before the falling-pressure weight was zeroed.
+# Held as a ratio rather than a second yph constant so there is still only
+# one pressure dial, and so the pair survives PRESSURE_DROP_YPH being 0
+# (deriving the ratio from the two yph values would now divide by zero).
+PRESSURE_DROP_MINOR_FRACTION = 0.5
 
-PRESSURE_BAND_LOW_IN = 29.8
+PRESSURE_BAND_LOW_IN = 29.9
 PRESSURE_BAND_HIGH_IN = 30.3
 PRESSURE_BAND_YPH = 0.0
 
@@ -1435,27 +1514,36 @@ WEIGHT_SPECS = [
         "pressure_drop_yph", GROUP_WEATHER, WEIGHT,
         "Falling-pressure bonus (0.4+ inHg over 24h)", "yph", 0.0, 48.0, 1.0,
         PRESSURE_DROP_YPH,
-        "+5 yph, near-token - small and unproven rather than disproven",
-        "Falling pressure has a sliver of support: Webb et al.'s separate "
-        "day-over-day analysis of weather CHANGES found 10 of 80 models "
-        "significant and attributed 3 of those 10 to pressure, and Goethlich 2019 "
-        "found pressure affected activity in some seasons and times of day. "
-        "Against that, Webb et al.'s within-day analysis found pressure was the "
-        "only one of five weather variables with no linear trend at all, and Penn "
-        "State found 'no statistical or biological significance' of oncoming storms "
-        "(before/during/after/control rates all within ~94-113 yph). Pinned at half "
-        "that ~10 yph spread, which is itself an upper bound on an effect that "
-        "study could not detect. A smaller 0.2 inHg fall scores half of whatever "
-        "you set here.",
-        "Webb et al. 2010; Goethlich 2019 (116 collared deer, South Carolina, "
-        "2009-2018); Penn State Deer-Forest Study",
+        "0 yph - four studies looked for this and three found nothing",
+        "This shipped at 5 yph until a September 2026 re-check of the sources "
+        "moved it to zero. Against it: Webb et al.'s within-day analysis found "
+        "pressure was the only one of five weather variables with no linear trend "
+        "at all; Penn State found 'no statistical or biological significance' of "
+        "oncoming storms (before/during/after/control rates all within ~94-113 "
+        "yph); and a Texas study (Hellickson, Miller, Marchinton, DeYoung and "
+        "Zabransky) found no correlation between hourly means in male activity and "
+        "barometric pressure. For it: Webb et al.'s separate day-over-day analysis "
+        "of weather CHANGES attributed 3 of 10 significant models to pressure, and "
+        "Goethlich 2019 measured real pressure-change effects - but they flip sign "
+        "between daytime and evening and are in mb/hr, not a 24-hour inHg fall, so "
+        "they can't set this number. The two triggers (0.2 and 0.4 inHg over 24 "
+        "hours) are old-timer theory rather than a measurement: no located study "
+        "tests how far a barometer has to fall before it means anything. The trend "
+        "is still computed and shown, because it's informative to look at. Raise "
+        "this if you back the old-timers; a 0.2 inHg fall scores half of it.",
+        "Webb et al. 2010; Penn State Deer-Forest Study; Hellickson et al. (Texas, "
+        "reported in Kenyon 2020); Goethlich 2019 (116 collared deer, South "
+        "Carolina, 2009-2018)",
     ),
     WeightSpec(
         "pressure_band_yph", GROUP_WEATHER, WEIGHT,
-        "Pressure 'sweet spot' bonus (29.8-30.3 inHg)", "yph", 0.0, 48.0, 1.0,
+        "Pressure 'sweet spot' bonus (29.9-30.3 inHg)", "yph", 0.0, 48.0, 1.0,
         PRESSURE_BAND_YPH,
-        "0 yph - this one traces to a magazine rule of thumb, not a study",
-        "The 29.8-30.3 inHg 'sweet spot' band is widely repeated in the hunting "
+        "0 yph - this one traces to old-timer theory, not a study",
+        "The 29.90-30.30 inHg 'sweet spot' band is Amenrud's (Mossy Oak, 2018), "
+        "from his own observational survey of captive herds in the 1980s-90s - he "
+        "adds that movement is best at the top of that range, 30.10-30.30. It is "
+        "widely repeated in the hunting "
         "press. No located study tests a static pressure LEVEL (as opposed to a "
         "change), and the closest thing to a test is Webb et al.'s within-day null "
         "- pressure was the only one of their five weather variables with no linear "
@@ -1463,7 +1551,9 @@ WEIGHT_SPECS = [
         "description for hunters who track it, it just doesn't move the ranking. "
         "This is the dial with the weakest evidence behind it of anything on this "
         "page; it is here because it is the one people ask for.",
-        "No supporting study located; Webb et al. 2010 is the nearest null result",
+        "Amenrud 2018 (Mossy Oak; observational, no collar data) for the band "
+        "itself; no supporting study located, and Webb et al. 2010 is the nearest "
+        "null result",
     ),
     WeightSpec(
         "weather_damping", GROUP_WEATHER, SHAPE,
@@ -1498,11 +1588,21 @@ DEFAULT_WEIGHTS = {spec.key: spec.default for spec in WEIGHT_SPECS}
 # all of them.
 CANDIDATE_WINDOW_COUNT = 15
 
-# Open-Meteo's hourly forecast rejects forecast_days > 16 (HTTP 400), but
-# the "Days" slider below goes up to 30 so solunar-only (moon/sun) times
-# can still be shown further out via ephem, which has no such cap.
-# Clamping here keeps the weather/ranking feature working for the first
-# 16 days instead of failing outright the moment someone picks >16.
+# Open-Meteo's hourly forecast rejects forecast_days > 16 (HTTP 400), so
+# this is the forecast horizon, and the "Days" slider is capped at it.
+#
+# The slider used to run to 30, on the theory that solunar-only (moon/sun)
+# times are still worth showing further out because ephem has no such cap.
+# The cost was a scoring artifact: past day 16 a window's hours carry no
+# weather at all, and score_breakdown() averages the weather term over
+# the hours that HAVE weather rather than over all WINDOW_HOURS (so a
+# partly-covered window isn't diluted by its blank hours). A window
+# straddling the horizon therefore scored its one or two weather hours at
+# up to 6x the weight the documented formula gives them, while its
+# activity and rut terms were still divided by 6 - i.e. the ranking
+# silently changed shape at a boundary the user couldn't see. Capping the
+# slider is the honest fix: every window the app ranks now has weather
+# for all of its hours.
 OPEN_METEO_MAX_FORECAST_DAYS = 16
 
 # Days of *past* hourly data to request alongside the forecast. Serves two
@@ -1625,6 +1725,67 @@ def _summarize_weather(samples):
     }
 
 
+def _interp_anchors(anchors, offset):
+    """Linear interpolation of ascending (x, y) anchor points at `offset`,
+    clamped to the end values outside the range.
+
+    Shared by the rut ladder and the dawn/dusk rut factor, which are
+    anchored on the same band grid and so ramp between their measured
+    values the same way."""
+    if offset <= anchors[0][0]:
+        return anchors[0][1]
+    if offset >= anchors[-1][0]:
+        return anchors[-1][1]
+    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
+        if x0 <= offset < x1:
+            return y0 + (offset - x0) / (x1 - x0) * (y1 - y0)
+    return anchors[-1][1]
+
+
+def _dawn_rut_factor_anchors(weights):
+    """(day offset, factor) anchors for the dawn/dusk premium, ascending.
+
+    The factor at each phase is the measured dawn/dusk premium divided by
+    the season-wide one - i.e. 1 + (dawn delta - all-data delta) / 48 -
+    computed here from the two published series rather than typed in. See
+    RUT_PHASE_DAWN_YPH for the derivation and why this exists.
+
+    The denominator is the CREPUSCULAR_YPH constant, not the dial: the
+    ladder expresses each phase's premium as a fraction of the measured
+    season-wide +48, which is a fact about the study and doesn't move when
+    a user drags the dawn/dusk dial. Dragging that dial scales the whole
+    ladder with it, which is the intended behaviour."""
+    band = weights["rut_band_days"]
+
+    def factor(dawn_yph, all_yph):
+        return 1.0 + (dawn_yph - all_yph) / CREPUSCULAR_YPH
+
+    no_rut = factor(NO_RUT_DAWN_YPH, NO_RUT_MEASURED_YPH)
+    return (
+        [((RUT_PHASE_YPH[0][1] - 1) * band, no_rut)]
+        + [
+            (band_index * band, factor(RUT_PHASE_DAWN_YPH[name], yph))
+            for name, band_index, yph in RUT_PHASE_YPH
+        ]
+        + [((RUT_PHASE_YPH[-1][1] + 1) * band, no_rut)]
+    )
+
+
+def dawn_rut_factor(day, peak_date, weights=None):
+    """How much of the dawn/dusk bonus applies on `day`, as a multiplier.
+
+    1.0 would be the season-wide +48 yph; the measured ladder runs from
+    about 1.15 outside the rut down to 0.13 at peak rut. Interpolated
+    between the same band anchors as rut_phase(), so it is continuous in
+    day offset and a one-day slip in the user's peak date can't step it.
+
+    Not a dial: like the rut ladder's shape, this is what the study
+    measured rather than a preference. The dawn/dusk dial scales it."""
+    weights = weights or DEFAULT_WEIGHTS
+    offset = (day - peak_date).days
+    return _interp_anchors(_dawn_rut_factor_anchors(weights), offset)
+
+
 def _rut_anchors(weights):
     """The ladder as (day offset, yph) anchor points, ascending.
 
@@ -1678,15 +1839,7 @@ def rut_phase(day, peak_date, weights=None):
             label = name
             break
 
-    anchors = _rut_anchors(weights)
-    if offset <= anchors[0][0]:
-        return label, anchors[0][1]
-    if offset >= anchors[-1][0]:
-        return label, anchors[-1][1]
-    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:]):
-        if x0 <= offset < x1:
-            return label, y0 + (offset - x0) / (x1 - x0) * (y1 - y0)
-    return label, weights["no_rut_yph"]
+    return label, _interp_anchors(_rut_anchors(weights), offset)
 
 
 def _hourly_temp_normals(samples, now_local):
@@ -1793,6 +1946,10 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date, weights=None):
         activity = 0.0
         crepuscular = 0.0
         events = []
+        # The dawn/dusk bonus fades during the rut, by the measured ladder
+        # in RUT_PHASE_DAWN_YPH. Keyed off the same date as the rut term
+        # below so the two always describe the same day.
+        dawn_factor = dawn_rut_factor(hour_start.date(), rut_peak_date, weights)
         for p in all_periods:
             # Both point events (Sunrise/Sunset) and windowed ones
             # (Major/Minor) are scored from their center outward, so the
@@ -1803,9 +1960,11 @@ def build_hourly_timeline(days_data, samples, tz, rut_peak_date, weights=None):
                 min(center + half, hour_end) - max(center - half, hour_start)
             ).total_seconds() / 3600
             if overlap_hours > 0:
-                activity += kind_yph.get(p["kind"], 0.0) * POINTS_PER_YPH * overlap_hours
+                yph = kind_yph.get(p["kind"], 0.0)
                 if p["kind"] in ("Sunrise", "Sunset"):
+                    yph *= dawn_factor
                     crepuscular += overlap_hours
+                activity += yph * POINTS_PER_YPH * overlap_hours
                 events.append(p)
         # Fraction of this hour inside a dawn/dusk halo (the two halos
         # can only overlap at extreme latitudes, hence the clamp). This
@@ -1861,8 +2020,9 @@ def _pressure_drop_yph(pressure_drop, weights=None):
     format_window() (which reports the window-start reading) so the
     tiers behind the displayed label are the ones actually scored.
 
-    The smaller tier keeps its measured-to-full ratio (2.5 of 5.0) as the
-    full tier is dialled, so there is one pressure dial rather than two."""
+    The smaller tier keeps its PRESSURE_DROP_MINOR_FRACTION of whatever
+    the full tier is dialled to, so there is one pressure dial rather than
+    two. Both are 0 in Kendall's formula - see the constant block."""
     weights = weights or DEFAULT_WEIGHTS
     if pressure_drop is None:
         return 0.0
@@ -1870,7 +2030,7 @@ def _pressure_drop_yph(pressure_drop, weights=None):
     if pressure_drop >= PRESSURE_DROP_THRESHOLD_IN:
         return full
     if pressure_drop >= PRESSURE_DROP_MINOR_THRESHOLD_IN:
-        return full * (PRESSURE_DROP_MINOR_YPH / PRESSURE_DROP_YPH)
+        return full * PRESSURE_DROP_MINOR_FRACTION
     return 0.0
 
 
@@ -2597,7 +2757,9 @@ with st.form("location_form"):
         )
     with col2:
         postcode = st.text_input("Postal / zip code")
-    days = st.slider("Days", min_value=1, max_value=30, value=7)
+    # Capped at the weather horizon, not at ephem's (which has none) - see
+    # OPEN_METEO_MAX_FORECAST_DAYS for why a longer search scored badly.
+    days = st.slider("Days", min_value=1, max_value=OPEN_METEO_MAX_FORECAST_DAYS, value=7)
     submitted = st.form_submit_button("Get hunting forecast", type="primary")
 
 if submitted:
@@ -3006,6 +3168,36 @@ _rut_scale = w["rut_peak_yph"] / RUT_PEAK_YPH
 _halo_hours = w["crepuscular_half_min"] / 60.0
 _dawn_share = min(WINDOW_HOURS, 2 * _halo_hours) / WINDOW_HOURS
 
+# "Each weather term is capped at one dawn's worth of contribution" is a
+# claim about Kendall's formula only: WEATHER_BOUND_YPH derives from the
+# CREPUSCULAR_YPH *constant*, not from the dawn/dusk dial, and every
+# weather dial's range runs to 48 yph regardless of where dawn/dusk sits.
+# So in custom mode the sentence checks itself against the dials in force
+# instead of asserting a bound the user may have already left behind.
+_dawn_factors = [f for _, f in _dawn_rut_factor_anchors(w)]
+_dawn_factor_lo, _dawn_factor_hi = min(_dawn_factors), max(_dawn_factors)
+_dawn_contrib = w["crepuscular_yph"] * _dawn_share
+_weather_top = max(
+    w["cold_max_yph"], w["precip_penalty_yph"], w["wind_penalty_yph"],
+    w["pressure_drop_yph"], w["pressure_band_yph"],
+)
+if using_custom:
+    _weather_bound_note = (
+        f" - Kendall's bound, not necessarily yours. Your largest weather term is "
+        f"{_weather_top:.0f} yph, against a dawn worth ~{_dawn_contrib:.0f} yph "
+        f"averaged across a {WINDOW_HOURS}-hour window, so weather "
+        + (
+            "still can't outweigh dawn and dusk."
+            if _weather_top <= _dawn_contrib + 0.5
+            else "can now outweigh the best-established daily signal in the model."
+        )
+    )
+else:
+    _weather_bound_note = (
+        f": {CREPUSCULAR_YPH:.0f} yph over ~2 of {WINDOW_HOURS} hours, "
+        f"i.e. ~{WEATHER_BOUND_YPH:.0f} yph."
+    )
+
 with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     if using_custom:
         st.warning(
@@ -3054,8 +3246,8 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         f"| Late rut | +78 yph | {78 * _rut_scale:.0f} | "
         f"{78 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
         f"| **Within {_halo_hours:g} hr of sunrise/sunset** | **+48 yph** (317 vs. 269) "
-        f"| **{w['crepuscular_yph']:.0f}** | "
-        f"**{w['crepuscular_yph'] * POINTS_PER_YPH:.2f}** |\n"
+        f"| **{w['crepuscular_yph']:.0f}** x rut factor | "
+        f"**{w['crepuscular_yph'] * POINTS_PER_YPH:.2f}** x rut factor |\n"
         f"| Post-rut | +9 yph | {9 * _rut_scale:.0f} | "
         f"{9 * _rut_scale * POINTS_PER_YPH:.2f} |\n"
         f"| Pre-rut | +4 yph | {4 * _rut_scale:.0f} | "
@@ -3069,7 +3261,17 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "Points are the effect at its own rate; what it adds to a window also depends "
         f"on how many hours it covers - a dawn band covers ~{2 * _halo_hours:g} of "
         f"{WINDOW_HOURS}, so it contributes "
-        f"~{w['crepuscular_yph'] * _dawn_share * POINTS_PER_YPH:.2f}.\n\n"
+        f"~{w['crepuscular_yph'] * _dawn_share * POINTS_PER_YPH:.2f} before the rut "
+        "factor.\n\n"
+        "**The dawn/dusk bonus is scaled by the rut phase**, because Neary et al. "
+        "measured the dawn premium separately for each phase and it nearly disappears "
+        "at the peak: bucks in peak rut are moving hard at midday too, so dawn stops "
+        f"being special. The factor runs from **{_dawn_factor_hi:.2f} outside the rut "
+        f"down to {_dawn_factor_lo:.2f} at peak rut**, which makes a peak-rut dawn hour "
+        "score 417 yph - the figure actually measured - instead of the 459 a flat "
+        "+48 would give. It is interpolated by day like the ladder above, and it is "
+        "measured rather than chosen, so it isn't a dial; the dawn/dusk dial scales "
+        "it.\n\n"
         + (
             "Rut phase and dawn/dusk are the two effects the research puts above "
             "everything else; whether your dials still reflect that is worth a look."
@@ -3084,9 +3286,12 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
     st.markdown(
         "| # | Term | How it's scored | Basis |\n"
         "|---|---|---|---|\n"
-        "| 1 | **Daily activity** | Dawn/dusk (+/-60 min), solunar Major (+/-60 min) "
-        "and Minor (+/-30 min), overlap-weighted per hour at the yph above | "
-        "**Measured** - Neary et al. 2025 |\n"
+        f"| 1 | **Daily activity** | Dawn/dusk (+/-{w['crepuscular_half_min']:.0f} min), "
+        f"solunar Major (+/-{MAJOR_HALF_WINDOW.total_seconds() / 60:.0f} min) and Minor "
+        f"(+/-{MINOR_HALF_WINDOW.total_seconds() / 60:.0f} min), overlap-weighted per "
+        f"hour at the yph above; dawn/dusk x {_dawn_factor_lo:.2f}-{_dawn_factor_hi:.2f} "
+        "by rut phase | "
+        "**Measured** - Neary et al. 2025, all four of its reported series |\n"
         f"| 2 | **Rut phase** | Five measured levels anchored "
         f"{w['rut_band_days']:.0f} days apart around the peak date you enter and "
         "interpolated between, applied to every hour of the window | **Measured** - Neary et al. "
@@ -3103,7 +3308,7 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "(Webb et al. 2010); the Penn State Deer-Forest Study's two storm years "
         "disagree on direction |\n"
         f"| 5 | **Pressure** | {w['pressure_drop_yph']:.0f} yph "
-        f"({w['pressure_drop_yph'] * PRESSURE_DROP_MINOR_YPH / PRESSURE_DROP_YPH:.1f} "
+        f"({w['pressure_drop_yph'] * PRESSURE_DROP_MINOR_FRACTION:.1f} "
         "for a smaller fall) on a falling 24-hour trend; the "
         f"{PRESSURE_BAND_LOW_IN}-{PRESSURE_BAND_HIGH_IN} inHg \"sweet spot\" band is "
         "reported and scores "
@@ -3120,7 +3325,8 @@ with st.expander(":straight_ruler: How the hunting-window score is calculated"):
         "sunrise/sunset halo) | **Two studies** - Goethlich 2019 and Webb et al. 2010 "
         "found weather effects concentrate in non-peak hours |\n\n"
         "Terms 3-5 are bounded judgment calls: no located study reports weather as a "
-        "movement *rate*, so each is capped at one dawn's worth of contribution."
+        "movement *rate*, so each is capped at one dawn's worth of contribution"
+        + _weather_bound_note
     )
 
     st.markdown(

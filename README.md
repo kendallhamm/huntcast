@@ -145,7 +145,7 @@ beside every dial you've moved.)
 | Peak rut | +142 yph | +3.00 |
 | Early rut | +104 yph | +2.20 |
 | Late rut | +78 yph | +1.65 |
-| **Within 1 hr of sunrise/sunset** | **+48 yph** (317 vs. 269) | **+1.01** |
+| **Within 1 hr of sunrise/sunset** | **+48 yph** (317 vs. 269) | **+1.01**, scaled by rut phase |
 | Post-rut | +9 yph | +0.19 |
 | Pre-rut | +4 yph | +0.08 |
 | **Solunar Major** (moon overhead/underfoot) | **+3 yph** | **+0.06** |
@@ -166,11 +166,11 @@ together**, which is an assumption the source doesn't test - see
 
 | # | Term | Basis |
 |---|---|---|
-| 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. **Measured** (Neary et al. 2025). |
+| 1 | **Daily activity** | Dawn/dusk (±60 min) + solunar Major (±60 min) / Minor (±30 min), overlap-weighted per hour at the measured yph above. Dawn/dusk is also scaled by a **measured rut-phase factor** - 1.15 outside the rut, 0.13 at peak - because Neary et al. measured the dawn premium separately by phase and it nearly vanishes at peak rut. **Measured** (Neary et al. 2025). |
 | 2 | **Rut phase** | Five measured levels anchored 14 days apart around a user-supplied peak breeding date and linearly interpolated between, so the ladder is continuous in day offset. **Measured** effect size (Neary et al. 2025); **user-supplied** timing. |
 | 3 | **Cold** | Degrees below this location's own recent normal *for that hour of day*, ramping to 16 yph at 15°F below. **Judgment call, bounded** (Webb et al. 2010). |
 | 4 | **Rain/wind penalty** | Rain to -8 yph at 100% chance; wind to -8 yph, engaging above 15 mph and maxing at 40. **Judgment call, bounded** (Webb et al. 2010; Penn State Deer-Forest Study). |
-| 5 | **Pressure** | 5 yph (or 2.5) for a falling 24-hour trend. The 29.8-30.3 inHg "sweet spot" band is reported in the window text but carries **zero** weight. **Near-token** (Penn State Deer-Forest Study; Webb et al. 2010). |
+| 5 | **Pressure** | **Zero weight, both halves.** The falling 24-hour trend and the 29.9-30.3 inHg "sweet spot" band are both reported in the window text and neither moves the ranking. **Three nulls** (Webb et al. 2010; Penn State Deer-Forest Study; Hellickson et al., Texas). |
 | 6 | **Dawn/dusk damping** | Terms 3-5 are evaluated hour by hour and multiplied by `1 - 0.5 × (fraction of the hour inside a sunrise/sunset halo)`. **Structure from two studies** (Goethlich 2019; Webb et al. 2010); size a judgment call. |
 
 The weather terms (3-5) could not be calibrated the same way, because no
@@ -178,8 +178,8 @@ located study reports weather effects as a movement-rate change. They
 are bounded judgment calls, ceilinged at **one dawn's worth of
 contribution** so weather can match but never dominate the
 best-established daily signal — cold gets that full ceiling, rain and
-wind half of it each, falling pressure a token slice, and the static
-pressure band nothing.
+wind half of it each, and both halves of the pressure term nothing at
+all.
 
 > **Where the rest of this went.** The full derivation of every
 > constant, the annotated bibliography behind it, the county and region
@@ -220,7 +220,11 @@ to open in your browser.
    no postal-code coverage on Zippopotam and would just fail the lookup.
 3. **Postal / zip code** - the postal code to look up within that
    country.
-4. **Days** - slider from 1 to 30 days of forecast (defaults to 7).
+4. **Days** - slider from 1 to 16 days of forecast (defaults to 7). The
+   cap is Open-Meteo's hourly forecast horizon: past it there is no
+   weather to score, and a window straddling the edge got its weather
+   term weighted as if there were. See
+   [litreview.md](litreview.md#model-mechanics--the-formulas-and-constants).
 5. **Peak breeding (rut) date** - defaults to November 15. Override it
    with your state wildlife agency's conception data if they publish it;
    local data beats any formula this app could apply.
