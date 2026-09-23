@@ -5,8 +5,7 @@ full reasoning behind every number in Huntcaster's scoring model, the
 annotated bibliography behind those numbers, the county/region rut-date
 sources, and the model's known gaps.
 
-It lives here rather than in the app because a hunter opening Huntcaster
-wants the forecast, not the footnotes. The app's "How the score is
+The app's "How the score is
 calculated" panel carries the formula, the weight table and an inline
 citation for every term; everything that explains *why* a weight is what
 it is lives below.
